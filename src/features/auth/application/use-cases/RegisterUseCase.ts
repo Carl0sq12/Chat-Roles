@@ -9,7 +9,7 @@ export class RegisterUseCase {
         email: string,
         password: string,
         username: string,
-        role: UserRole,          // ← NUEVO parámetro
+        role: UserRole,          
     ): Promise<User> {
         if (!email || !password || !username)
             throw new AuthError('Todos los campos son obligatorios');

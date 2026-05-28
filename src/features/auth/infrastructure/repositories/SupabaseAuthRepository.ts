@@ -9,7 +9,8 @@ export class SupabaseAuthRepository implements IAuthRepository {
     if (error || !data.user) throw new Error(error?.message ?? 'Error al iniciar sesión');
 
     const { data: profile, error: profileError } = await supabase
-      .from('profiles')
+      //mapea datos de Supabase-entidad User del dominio
+    .from('profiles')
       .select('username, avatar_url, role')
       .eq('id', data.user.id)
       .single();

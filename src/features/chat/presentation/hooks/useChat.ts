@@ -3,12 +3,15 @@ import { GetMessagesUseCase } from "@features/chat/application/use-cases/GetMess
 import { SendMessageUseCase } from "@features/chat/application/use-cases/SendMessageUseCase";
 import { SubscribeToRoomUseCase } from "@features/chat/application/use-cases/SubscribeToRoomUseCase";
 import { Message } from "@features/chat/domain/entities/Message";
-import { SupabaseChatRepository } from "@features/chat/infrastructure/repositories/SupabaseChatRepository";
+//import { SupabaseChatRepository } from "@features/chat/infrastructure/repositories/SupabaseChatRepository";
+import { AppwriteChatRepository } from '@features/chat/infrastructure/repositories/AppwriteChatRepository';
+
 import { showMessageNotification } from "@shared/infrastructure/notifications/NotificationService";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 
-const chatRepo           = new SupabaseChatRepository();
+//const chatRepo           = new SupabaseChatRepository();
+const chatRepo           = new AppwriteChatRepository();
 const sendMessageUseCase = new SendMessageUseCase(chatRepo);
 const getMessagesUseCase = new GetMessagesUseCase(chatRepo);
 const subscribeUseCase   = new SubscribeToRoomUseCase(chatRepo);

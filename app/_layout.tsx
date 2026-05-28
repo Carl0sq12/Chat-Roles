@@ -1,51 +1,38 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Slot, useRouter, useSegments } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { supabase } from '@shared/infrastructure/supabase/client';
 import { useAuthStore } from '@features/auth/presentation/store/authStore';
-import { SupabaseAuthRepository } from '@features/auth/infrastructure/repositories/SupabaseAuthRepository';
+import { AppwriteAuthRepository } from '@features/auth/infrastructure/repositories/AppwriteAuthRepository';
 import { requestNotificationPermissions } from '@shared/infrastructure/notifications/NotificationService';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } }
 });
-const authRepo = new SupabaseAuthRepository();
+const authRepo = new AppwriteAuthRepository();
 
 function AuthGuard() {
   const { user, setUser } = useAuthStore();
   const segments = useSegments();
   const router = useRouter();
-  const [isReady, setIsReady] = useState(false); // 👈 clave del fix
+  const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
     async function restoreSession() {
-      const user = await authRepo.getCurrentUser();
-      setUser(user);
-      setIsReady(true);
-    }
-    restoreSession(); // ✅ función async interna, no async directo en useEffect
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        async function syncUser() {
-          if (session) {
-            const user = await authRepo.getCurrentUser();
-            setUser(user);
-          } else {
-            setUser(null);
-          }
-          setIsReady(true); // 👈 movido aquí: cubre ambos casos (con y sin sesión)
-        }
-        syncUser();
+      try {
+        const user = await authRepo.getCurrentUser();
+        setUser(user);
+      } catch {
+        setUser(null);
+      } finally {
+        setIsReady(true);
       }
-    );
-    requestNotificationPermissions(); 
-    return () => subscription.unsubscribe(); // ✅ cleanup síncrono
+    }
+    restoreSession();
+    requestNotificationPermissions();
   }, []);
 
   useEffect(() => {
-    if (!isReady) return; // 👈 no navegar hasta estar montado
-
+    if (!isReady) return;
     const inAuth = segments[0] === '(auth)';
     if (!user && !inAuth) router.replace('/(auth)/login');
     if (user && inAuth) router.replace('/(app)');

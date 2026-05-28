@@ -20,6 +20,15 @@ EXPO_PUBLIC_GEMINI_API_KEY=AIzaSyC5a38JGOfMrBqzP8YACICsWOTZMN-wLWY
 EXPO_PUBLIC_SUPABASE_URL=https://hiqiwvvtwsizmzsxmdso.supabase.co
 EXPO_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_yovHR88YGverzcH9OOTpug_lqOIBjjC
 
+
+EXPO_PUBLIC_APPWRITE_ENDPOINT=https://fra.cloud.appwrite.io/v1
+EXPO_PUBLIC_APPWRITE_PROJECT_ID=6a176c59002f6f6af4b0
+EXPO_PUBLIC_APPWRITE_DATABASE_ID=6a176de200010bdf9ec8
+EXPO_PUBLIC_APPWRITE_BUCKET_ID=6a1773ec00251acdc5cb
+EXPO_PUBLIC_APPWRITE_ROOMS_COLLECTION=rooms
+EXPO_PUBLIC_APPWRITE_MESSAGES_COLLECTION=messages
+EXPO_PUBLIC_APPWRITE_PROFILES_COLLECTION=profiles
+
 ================================================
 📄 ARCHIVO: .gitignore
 ================================================
@@ -110,6 +119,7 @@ const E = {
   neon: '#a855f7', neonSoft: '#c084fc', cyan: '#22d3ee',
   text: '#e2e8f0', textDim: '#94a3b8', textMute: '#475569',
   border: 'rgba(124,58,237,0.22)',
+  red: '#ef4444',
 };
 
 const AVATAR_BG = ['#7c3aed', '#0e7490', '#be185d', '#15803d', '#92400e'];
@@ -123,76 +133,100 @@ function MsgAvatar({ name }: { name: string }) {
   );
 }
 
-// Componente separado para evitar re-renders del padre que cierren el teclado
+// InputBar como componente separado para evitar que el padre re-renderice
+// y cierre el teclado al escribir
 function InputBar({
   onSend,
   onImagePick,
   isUploading,
+  isSending,
+  sendError,
 }: {
   onSend: (text: string) => void;
   onImagePick: () => void;
   isUploading: boolean;
+  isSending: boolean;
+  sendError: string | null;
 }) {
   const [input, setInput] = useState('');
 
   const handleSend = () => {
-    if (!input.trim()) return;
-    onSend(input.trim());
+    const trimmed = input.trim();
+    if (!trimmed) return;
+    onSend(trimmed);
     setInput('');
   };
 
+  const canSend = input.trim().length > 0 && !isSending;
+
   return (
-    <View style={s.inputBar}>
-      <TouchableOpacity
-        style={s.attachBtn}
-        onPress={onImagePick}
-        disabled={isUploading}
-        activeOpacity={0.7}
-      >
-        {isUploading
-          ? <ActivityIndicator size="small" color={E.violet} />
-          : <Text style={s.attachIcon}>⊕</Text>
-        }
-      </TouchableOpacity>
+    <View>
+      {/* Error de envío */}
+      {!!sendError && (
+        <View style={s.sendErrorBar}>
+          <Text style={s.sendErrorText}>⚠ {sendError}</Text>
+        </View>
+      )}
 
-      <TextInput
-        style={s.input}
-        value={input}
-        onChangeText={setInput}
-        placeholder="Mensaje cifrado..."
-        placeholderTextColor={E.textMute}
-        multiline
-        maxLength={500}
-        blurOnSubmit={false}
-        returnKeyType="default"
-      />
+      <View style={s.inputBar}>
+        {/* Botón adjuntar imagen */}
+        <TouchableOpacity
+          style={s.attachBtn}
+          onPress={onImagePick}
+          disabled={isUploading || isSending}
+          activeOpacity={0.7}
+        >
+          {isUploading
+            ? <ActivityIndicator size="small" color={E.violet} />
+            : <Text style={s.attachIcon}>⊕</Text>
+          }
+        </TouchableOpacity>
 
-      <TouchableOpacity
-        style={[s.sendBtn, !input.trim() && s.sendBtnOff]}
-        onPress={handleSend}
-        disabled={!input.trim()}
-        activeOpacity={0.85}
-      >
-        <Text style={s.sendIcon}>↑</Text>
-      </TouchableOpacity>
+        {/* Input de texto */}
+        <TextInput
+          style={s.input}
+          value={input}
+          onChangeText={setInput}
+          placeholder="Escribe un mensaje..."
+          placeholderTextColor={E.textMute}
+          multiline
+          maxLength={500}
+          blurOnSubmit={false}
+          returnKeyType="default"
+          editable={!isSending}
+        />
+
+        {/* Botón enviar */}
+        <TouchableOpacity
+          style={[s.sendBtn, !canSend && s.sendBtnOff]}
+          onPress={handleSend}
+          disabled={!canSend}
+          activeOpacity={0.85}
+        >
+          {isSending
+            ? <ActivityIndicator size="small" color="#fff" />
+            : <Text style={s.sendIcon}>↑</Text>
+          }
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
 
 export default function ChatScreen() {
-  const { roomId }                           = useLocalSearchParams<{ roomId: string }>();
-  const { messages, sendMessage, isLoading } = useChat(roomId);
-  const user                                 = useAuthStore((s) => s.user);
-  const [isUploading, setIsUploading]        = useState(false);
-  const listRef                              = useRef<FlatList>(null);
-  const prevLengthRef                        = useRef(0);
+  const { roomId }                                            = useLocalSearchParams<{ roomId: string }>();
+  const { messages, sendMessage, isLoading, isSending, sendError } = useChat(roomId);
+  const user                                                  = useAuthStore((s) => s.user);
+  const isVendedor                                            = user?.role === 'vendedor';
+  const [isUploading, setIsUploading]                        = useState(false);
+  const listRef                                               = useRef<FlatList>(null);
+  const prevLengthRef                                         = useRef(0);
 
+  // Scroll al último mensaje cuando llegan nuevos
   useEffect(() => {
     if (messages.length > prevLengthRef.current) {
       prevLengthRef.current = messages.length;
-      setTimeout(() => {
-        listRef.current?.scrollToEnd({ animated: true });
-      }, 50);
+      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80);
     }
   }, [messages.length]);
 
@@ -206,7 +240,7 @@ export default function ChatScreen() {
       const imageUrl = await pickAndUploadImage();
       if (imageUrl) sendMessage({ content: '', imageUrl });
     } catch (e: any) {
-      Alert.alert("Error", e.message);
+      Alert.alert('Error', e.message);
     } finally {
       setIsUploading(false);
     }
@@ -214,26 +248,47 @@ export default function ChatScreen() {
 
   const renderMsg = useCallback(({ item }: { item: Message }) => {
     const isOwn = item.userId === user?.id;
+
+    // Badge de rol del autor (solo en mensajes ajenos)
+    const authorRole = isOwn ? user?.role : undefined;
+
     return (
       <View style={[s.msgRow, isOwn && s.msgRowOwn]}>
         {!isOwn && <MsgAvatar name={item.authorUsername ?? '?'} />}
+
         <View style={s.msgStack}>
-          {!isOwn && <Text style={s.msgAuthor}>{item.authorUsername}</Text>}
+          {!isOwn && (
+            <View style={s.msgAuthorRow}>
+              <Text style={s.msgAuthor}>{item.authorUsername}</Text>
+            </View>
+          )}
+
           <View style={[s.bubble, isOwn ? s.bubbleOwn : s.bubbleOther]}>
             {item.imageUrl && (
-              <Image source={{ uri: item.imageUrl }} style={s.msgImage} resizeMode="cover" />
+              <Image
+                source={{ uri: item.imageUrl }}
+                style={s.msgImage}
+                resizeMode="cover"
+              />
             )}
             {!!item.content && (
-              <Text style={[s.msgText, isOwn && s.msgTextOwn]}>{item.content}</Text>
+              <Text style={[s.msgText, isOwn && s.msgTextOwn]}>
+                {item.content}
+              </Text>
+            )}
+            {/* Indicador de mensaje temporal (enviando) */}
+            {item.id.startsWith('temp-') && (
+              <Text style={s.msgSending}>enviando...</Text>
             )}
           </View>
+
           <Text style={[s.msgTime, isOwn && s.msgTimeOwn]}>
             {item.createdAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </Text>
         </View>
       </View>
     );
-  }, [user?.id]);
+  }, [user?.id, user?.role]);
 
   if (isLoading) {
     return (
@@ -246,6 +301,15 @@ export default function ChatScreen() {
 
   return (
     <SafeAreaView style={s.container}>
+      {/* Banner de rol en el chat */}
+      <View style={[s.roleBanner, isVendedor ? s.roleBannerVendedor : s.roleBannerCliente]}>
+        <Text style={[s.roleBannerText, isVendedor ? s.roleBannerTextVendedor : s.roleBannerTextCliente]}>
+          {isVendedor
+            ? '🏪 Modo Vendedor — puedes crear canales y responder consultas'
+            : '🛒 Modo Cliente — pregunta lo que necesites sobre nuestros productos'}
+        </Text>
+      </View>
+
       <FlatList
         ref={listRef}
         data={messages}
@@ -255,11 +319,20 @@ export default function ChatScreen() {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="always"
         keyboardDismissMode="none"
+        // Scroll al fondo al montar si hay mensajes
+        onLayout={() => {
+          if (messages.length > 0) {
+            listRef.current?.scrollToEnd({ animated: false });
+          }
+        }}
       />
+
       <InputBar
         onSend={handleSend}
         onImagePick={handleImagePick}
         isUploading={isUploading}
+        isSending={isSending}
+        sendError={sendError}
       />
     </SafeAreaView>
   );
@@ -269,6 +342,29 @@ const s = StyleSheet.create({
   container:    { flex: 1, backgroundColor: E.bg },
   loading:      { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: E.bg, gap: 12 },
   loadingText:  { color: E.violet, fontSize: 12, letterSpacing: 1 },
+
+  // Banner de rol en la parte superior del chat
+  roleBanner: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+  },
+  roleBannerCliente: {
+    backgroundColor: 'rgba(124,58,237,0.08)',
+    borderBottomColor: 'rgba(124,58,237,0.20)',
+  },
+  roleBannerVendedor: {
+    backgroundColor: 'rgba(34,211,238,0.06)',
+    borderBottomColor: 'rgba(34,211,238,0.18)',
+  },
+  roleBannerText: {
+    fontSize: 11,
+    letterSpacing: 0.3,
+    textAlign: 'center',
+  },
+  roleBannerTextCliente:  { color: E.neonSoft },
+  roleBannerTextVendedor: { color: E.cyan },
+
   messagesList: { paddingHorizontal: 14, paddingVertical: 14, gap: 10 },
 
   msgRow:    { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
@@ -280,12 +376,14 @@ const s = StyleSheet.create({
     marginBottom: 2, flexShrink: 0,
   },
   avatarText: { color: '#fff', fontSize: 12, fontWeight: '800' },
-  msgStack:   { maxWidth: '75%', gap: 3 },
-  msgAuthor:  { fontSize: 10, color: E.violet, letterSpacing: 1, paddingHorizontal: 4, marginBottom: 1 },
+
+  msgStack:     { maxWidth: '75%', gap: 3 },
+  msgAuthorRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 4, marginBottom: 1 },
+  msgAuthor:    { fontSize: 10, color: E.violet, letterSpacing: 1 },
 
   bubble:      { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 18 },
   bubbleOther: { backgroundColor: E.card, borderWidth: 1, borderColor: E.border, borderTopLeftRadius: 4 },
-  bubbleOwn:   {
+  bubbleOwn: {
     backgroundColor: E.violet, borderTopRightRadius: 4,
     shadowColor: E.violet, shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.5, shadowRadius: 14, elevation: 6,
@@ -294,8 +392,19 @@ const s = StyleSheet.create({
   msgText:    { fontSize: 14, color: E.text, lineHeight: 20 },
   msgTextOwn: { color: '#fff' },
   msgImage:   { width: 200, height: 150, borderRadius: 10, marginBottom: 4 },
+  msgSending: { fontSize: 9, color: 'rgba(255,255,255,0.5)', marginTop: 2, fontStyle: 'italic' },
   msgTime:    { fontSize: 9, color: E.textMute, letterSpacing: 0.5, paddingHorizontal: 4, alignSelf: 'flex-start' },
   msgTimeOwn: { alignSelf: 'flex-end' },
+
+  // Error de envío
+  sendErrorBar: {
+    backgroundColor: 'rgba(239,68,68,0.12)',
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(239,68,68,0.25)',
+  },
+  sendErrorText: { color: '#f87171', fontSize: 11, textAlign: 'center' },
 
   inputBar: {
     flexDirection: 'row', alignItems: 'center',
@@ -333,6 +442,7 @@ const s = StyleSheet.create({
 📄 ARCHIVO: app\(app)\index.tsx
 ================================================
 
+import { useAuthStore } from "@features/auth/presentation/store/authStore";
 import { Room } from "@features/chat/domain/entities/Message";
 import { useRooms } from "@features/chat/presentation/hooks/useRooms";
 import { useRouter } from "expo-router";
@@ -382,10 +492,12 @@ function RoomAvatar({ name }: { name: string }) {
 
 export default function RoomsScreen() {
   const { rooms, isLoading, createRoom, isCreating, createError } = useRooms();
-  const router = useRouter();
+  const router      = useRouter();
+  const insets      = useSafeAreaInsets();
+  const isVendedor  = useAuthStore((s) => s.user?.role === 'vendedor');
+
   const [modalVisible, setModalVisible] = useState(false);
   const [roomName, setRoomName]         = useState('');
-  const insets = useSafeAreaInsets();
 
   const handleCreate = () => {
     if (!roomName.trim() || isCreating) return;
@@ -397,7 +509,7 @@ export default function RoomsScreen() {
   const renderRoom = ({ item }: { item: Room }) => (
     <TouchableOpacity
       style={s.roomCard}
-      onPress={() => router.push(`/chat/${item.id}`)}
+      onPress={() => router.push(`/chat/${item.id}?name=${encodeURIComponent(item.name)}`)}
       activeOpacity={0.75}
     >
       {/* left accent bar */}
@@ -436,8 +548,16 @@ export default function RoomsScreen() {
           <Text style={s.subheaderLabel}>CANALES ACTIVOS</Text>
           <Text style={s.subheaderSub}>// {rooms.length} disponibles</Text>
         </View>
-        <View style={s.badge}>
-          <Text style={s.badgeText}>{rooms.length}</Text>
+        <View style={s.subheaderRight}>
+          {/* Indicador de rol en subheader */}
+          <View style={[s.roleTag, isVendedor ? s.roleTagVendedor : s.roleTagCliente]}>
+            <Text style={[s.roleTagText, isVendedor ? s.roleTagTextVendedor : s.roleTagTextCliente]}>
+              {isVendedor ? '🏪 Vendedor' : '🛒 Cliente'}
+            </Text>
+          </View>
+          <View style={s.badge}>
+            <Text style={s.badgeText}>{rooms.length}</Text>
+          </View>
         </View>
       </View>
 
@@ -446,84 +566,99 @@ export default function RoomsScreen() {
         data={rooms}
         keyExtractor={(r) => r.id}
         renderItem={renderRoom}
-        contentContainerStyle={rooms.length === 0 ? { flex: 1 } : { padding: 16, gap: 10, paddingBottom: insets.bottom + 100 }}
+        contentContainerStyle={
+          rooms.length === 0
+            ? { flex: 1 }
+            : { padding: 16, gap: 10, paddingBottom: insets.bottom + 100 }
+        }
         ListEmptyComponent={
           <View style={s.centered}>
             <Text style={s.emptyIcon}>◈</Text>
-            <Text style={s.emptyTitle}>Sin canales</Text>
-            <Text style={s.emptySub}>Crea uno para comenzar</Text>
+            <Text style={s.emptyTitle}>
+              {isVendedor ? 'Sin canales' : 'Sin canales disponibles'}
+            </Text>
+            <Text style={s.emptySub}>
+              {isVendedor
+                ? 'Crea uno para comenzar'
+                : 'Espera a que un vendedor cree un canal'}
+            </Text>
           </View>
         }
       />
 
-      {/* ── FAB ── */}
-      <TouchableOpacity
-        style={[s.fab, { bottom: insets.bottom + 28 }]}
-        onPress={() => setModalVisible(true)}
-        activeOpacity={0.85}
-      >
-        <Text style={s.fabText}>+</Text>
-      </TouchableOpacity>
+      {/* ── FAB — solo visible para vendedores ── */}
+      {isVendedor && (
+        <TouchableOpacity
+          style={[s.fab, { bottom: insets.bottom + 28 }]}
+          onPress={() => setModalVisible(true)}
+          activeOpacity={0.85}
+        >
+          <Text style={s.fabText}>+</Text>
+        </TouchableOpacity>
+      )}
 
-      {/* ── Modal ── */}
-      <Modal
-        visible={modalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setModalVisible(false)}
-      >
-        <View style={s.overlay}>
-          <TouchableOpacity style={{ flex: 1 }} onPress={() => setModalVisible(false)} />
-          <View style={[s.dialog, { paddingBottom: insets.bottom + 28 }]}>
-            {/* top glow */}
-            <View style={s.dialogTopLine} />
+      {/* ── Modal — solo accesible para vendedores ── */}
+      {isVendedor && (
+        <Modal
+          visible={modalVisible}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setModalVisible(false)}
+        >
+          <View style={s.overlay}>
+            <TouchableOpacity style={{ flex: 1 }} onPress={() => setModalVisible(false)} />
+            <View style={[s.dialog, { paddingBottom: insets.bottom + 28 }]}>
+              {/* top glow */}
+              <View style={s.dialogTopLine} />
 
-            <Text style={s.dialogEyebrow}>// NUEVO CANAL</Text>
-            <Text style={s.dialogTitle}>
-              Nombra tu<Text style={{ color: E.neon }}> canal.</Text>
-            </Text>
+              <Text style={s.dialogEyebrow}>// NUEVO CANAL</Text>
+              <Text style={s.dialogTitle}>
+                Nombra tu<Text style={{ color: E.neon }}> canal.</Text>
+              </Text>
 
-            {createError && (
-              <View style={s.errorBox}>
-                <Text style={s.errorText}>⚠ {createError}</Text>
+              {createError && (
+                <View style={s.errorBox}>
+                  <Text style={s.errorText}>⚠ {createError}</Text>
+                </View>
+              )}
+
+              <View style={s.dialogFieldLabel_wrap}>
+                <Text style={s.dialogFieldLabel}>&gt; NOMBRE</Text>
               </View>
-            )}
 
-            <View style={s.dialogFieldLabel_wrap}>
-              <Text style={s.dialogFieldLabel}>&gt; NOMBRE</Text>
-            </View>
+              <TextInput
+                style={s.dialogInput}
+                placeholder="ej. general, dev-team, ops..."
+                placeholderTextColor={E.textMute}
+                value={roomName}
+                onChangeText={setRoomName}
+                autoFocus
+                maxLength={50}
+              />
 
-            <TextInput
-              style={s.dialogInput}
-              placeholder="ej. general, dev-team, ops..."
-              placeholderTextColor={E.textMute}
-              value={roomName}
-              onChangeText={setRoomName}
-              autoFocus
-              maxLength={50}
-            />
-
-            <View style={s.dialogActions}>
-              <TouchableOpacity
-                style={s.dialogCancel}
-                onPress={() => setModalVisible(false)}
-              >
-                <Text style={s.dialogCancelText}>CANCELAR</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[s.dialogCreate, isCreating && { opacity: 0.5 }]}
-                onPress={handleCreate}
-                disabled={isCreating}
-              >
-                {isCreating
-                  ? <ActivityIndicator color="#fff" size="small" />
-                  : <Text style={s.dialogCreateText}>CREAR  →</Text>
-                }
-              </TouchableOpacity>
+              <View style={s.dialogActions}>
+                <TouchableOpacity
+                  style={s.dialogCancel}
+                  onPress={() => setModalVisible(false)}
+                >
+                  <Text style={s.dialogCancelText}>CANCELAR</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[s.dialogCreate, isCreating && { opacity: 0.5 }]}
+                  onPress={handleCreate}
+                  disabled={isCreating}
+                >
+                  {isCreating
+                    ? <ActivityIndicator color="#fff" size="small" />
+                    : <Text style={s.dialogCreateText}>CREAR  →</Text>
+                  }
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
-        </View>
-      </Modal>
+        </Modal>
+      )}
+
     </View>
   );
 }
@@ -539,6 +674,30 @@ const s = StyleSheet.create({
   },
   subheaderLabel: { fontSize: 10, fontWeight: '600', color: E.textMute, letterSpacing: 2.5 },
   subheaderSub:   { fontSize: 10, color: E.violet, marginTop: 2, letterSpacing: 1 },
+
+  subheaderRight: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+  },
+
+  // Indicador de rol en subheader
+  roleTag: {
+    paddingHorizontal: 10, paddingVertical: 4,
+    borderRadius: 8, borderWidth: 1,
+  },
+  roleTagCliente: {
+    backgroundColor: 'rgba(124,58,237,0.10)',
+    borderColor: 'rgba(124,58,237,0.30)',
+  },
+  roleTagVendedor: {
+    backgroundColor: 'rgba(34,211,238,0.08)',
+    borderColor: 'rgba(34,211,238,0.28)',
+  },
+  roleTagText: {
+    fontSize: 9, fontWeight: '700', letterSpacing: 1,
+  },
+  roleTagTextCliente:  { color: E.neonSoft },
+  roleTagTextVendedor: { color: E.cyan },
+
   badge: {
     backgroundColor: E.violet, paddingHorizontal: 10, paddingVertical: 4,
     borderRadius: 100,
@@ -551,7 +710,7 @@ const s = StyleSheet.create({
   loadingText: { color: E.violet, fontSize: 12, letterSpacing: 1, marginTop: 12 },
   emptyIcon:   { fontSize: 40, color: E.border, marginBottom: 8 },
   emptyTitle:  { fontSize: 18, fontWeight: '700', color: E.textDim, letterSpacing: -0.3 },
-  emptySub:    { fontSize: 12, color: E.textMute, letterSpacing: 0.5 },
+  emptySub:    { fontSize: 12, color: E.textMute, letterSpacing: 0.5, textAlign: 'center', paddingHorizontal: 32 },
 
   roomCard: {
     flexDirection: 'row', alignItems: 'center',
@@ -580,7 +739,7 @@ const s = StyleSheet.create({
   roomChevron:{ fontSize: 22, color: E.border },
 
   fab: {
-    position: 'absolute', right: 20, bottom: 28,
+    position: 'absolute', right: 20,
     width: 56, height: 56, borderRadius: 18,
     backgroundColor: E.violet,
     alignItems: 'center', justifyContent: 'center',
@@ -649,6 +808,7 @@ const s = StyleSheet.create({
 ================================================
 
 import { useAuth } from "@features/auth/presentation/hooks/useAuth";
+import { useAuthStore } from "@features/auth/presentation/store/authStore";
 import { Stack } from "expo-router";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
@@ -666,6 +826,8 @@ const E = {
 
 export default function AppLayout() {
   const { logout } = useAuth();
+  const user       = useAuthStore((s) => s.user);
+  const isVendedor = user?.role === 'vendedor';
 
   return (
     <Stack
@@ -675,8 +837,6 @@ export default function AppLayout() {
         headerShadowVisible: false,
         headerBackTitle: '',
         contentStyle: { backgroundColor: E.bg },
-        // bottom border glow via headerBackground not easily done inline,
-        // so we handle it per-screen header
       }}
     >
       <Stack.Screen
@@ -696,35 +856,74 @@ export default function AppLayout() {
             </View>
           ),
           headerRight: () => (
-            <TouchableOpacity
-              onPress={logout}
-              style={s.logoutBtn}
-              activeOpacity={0.7}
-            >
-              <Text style={s.logoutText}>SALIR</Text>
-            </TouchableOpacity>
+            <View style={s.headerRight}>
+              {/* Badge de rol */}
+              <View style={[
+                s.roleBadge,
+                isVendedor ? s.roleBadgeVendedor : s.roleBadgeCliente,
+              ]}>
+                <Text style={s.roleDot}>
+                  {isVendedor ? '▲' : '●'}
+                </Text>
+                <Text style={[
+                  s.roleBadgeText,
+                  isVendedor ? s.roleBadgeTextVendedor : s.roleBadgeTextCliente,
+                ]}>
+                  {isVendedor ? 'VENDEDOR' : 'CLIENTE'}
+                </Text>
+              </View>
+
+              {/* Botón salir */}
+              <TouchableOpacity
+                onPress={logout}
+                style={s.logoutBtn}
+                activeOpacity={0.7}
+              >
+                <Text style={s.logoutText}>SALIR</Text>
+              </TouchableOpacity>
+            </View>
           ),
         }}
       />
+
       <Stack.Screen
         name="chat/[roomId]"
-        options={({ route }) => ({
-          headerTitle: () => (
-            <View style={s.chatHeaderTitle}>
-              <View style={s.chatAvatar}>
-                <Text style={s.chatAvatarText}>
-                  {((route.params as any)?.roomId ?? 'C').charAt(0).toUpperCase()}
+        options={({ route }) => {
+          const rawName    = (route.params as any)?.name;
+          const roomId     = (route.params as any)?.roomId;
+          const roomName   = rawName ?? (roomId ? `Canal (${roomId.substring(0, 8)})` : 'canal');
+          const firstLetter = roomName.startsWith('Canal (') ? 'C' : roomName.charAt(0).toUpperCase();
+
+          return {
+            headerTitle: () => (
+              <View style={s.chatHeaderTitle}>
+                <View style={s.chatAvatar}>
+                  <Text style={s.chatAvatarText}>{firstLetter}</Text>
+                </View>
+                <View>
+                  <Text style={s.chatRoomName}>
+                    {roomName.startsWith('Canal (') ? roomName : `# ${roomName}`}
+                  </Text>
+                  <Text style={s.chatOnline}>● EN LÍNEA</Text>
+                </View>
+              </View>
+            ),
+            // Badge de rol también visible en la pantalla de chat
+            headerRight: () => (
+              <View style={[
+                s.roleBadgeSmall,
+                isVendedor ? s.roleBadgeVendedor : s.roleBadgeCliente,
+              ]}>
+                <Text style={[
+                  s.roleBadgeTextSmall,
+                  isVendedor ? s.roleBadgeTextVendedor : s.roleBadgeTextCliente,
+                ]}>
+                  {isVendedor ? '▲ VEN' : '● CLI'}
                 </Text>
               </View>
-              <View>
-                <Text style={s.chatRoomName}>
-                  {(route.params as any)?.roomId ?? 'canal'}
-                </Text>
-                <Text style={s.chatOnline}>● EN LÍNEA</Text>
-              </View>
-            </View>
-          ),
-        })}
+            ),
+          };
+        }}
       />
     </Stack>
   );
@@ -746,6 +945,61 @@ const s = StyleSheet.create({
   brandDot: { color: E.neon },
   tagline:  { fontSize: 7, color: E.textMute, letterSpacing: 2.5, marginTop: 1 },
 
+  // ── Header right ──
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+
+  // Badge grande (pantalla index)
+  roleBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  roleBadgeCliente: {
+    backgroundColor: 'rgba(124,58,237,0.10)',
+    borderColor: 'rgba(124,58,237,0.35)',
+  },
+  roleBadgeVendedor: {
+    backgroundColor: 'rgba(34,211,238,0.08)',
+    borderColor: 'rgba(34,211,238,0.30)',
+  },
+  roleDot: {
+    fontSize: 7,
+    color: E.textMute,
+  },
+  roleBadgeText: {
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 1.5,
+  },
+  roleBadgeTextCliente: {
+    color: E.neonSoft,
+  },
+  roleBadgeTextVendedor: {
+    color: E.cyan,
+  },
+
+  // Badge pequeño (pantalla chat)
+  roleBadgeSmall: {
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 7,
+    borderWidth: 1,
+    marginRight: 4,
+  },
+  roleBadgeTextSmall: {
+    fontSize: 8,
+    fontWeight: '700',
+    letterSpacing: 1.5,
+  },
+
   logoutBtn: {
     paddingHorizontal: 12, paddingVertical: 7,
     borderRadius: 8,
@@ -754,13 +1008,7 @@ const s = StyleSheet.create({
   },
   logoutText: { fontSize: 10, fontWeight: '600', color: E.textMute, letterSpacing: 1.5 },
 
-  headerBorder: {
-    height: 1,
-    backgroundColor: E.violet,
-    opacity: 0.2,
-    marginHorizontal: 0,
-  },
-
+  // ── Chat header ──
   chatHeaderTitle: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   chatAvatar: {
     width: 32, height: 32,
@@ -770,8 +1018,8 @@ const s = StyleSheet.create({
     shadowOpacity: 0.6, shadowRadius: 8, elevation: 4,
   },
   chatAvatarText: { fontSize: 14, color: '#fff', fontWeight: '800' },
-  chatRoomName: { fontSize: 15, fontWeight: '700', color: '#fff', letterSpacing: -0.3 },
-  chatOnline:   { fontSize: 9, color: E.cyan, letterSpacing: 1.5 },
+  chatRoomName:   { fontSize: 15, fontWeight: '700', color: '#fff', letterSpacing: -0.3 },
+  chatOnline:     { fontSize: 9, color: E.cyan, letterSpacing: 1.5 },
 });
 
 
@@ -1063,6 +1311,7 @@ export default function RegisterScreen() {
   const [email, setEmail]       = useState('');
   const [password, setPassword] = useState('');
   const [username, setUsername] = useState('');
+  const [role, setRole]         = useState<'vendedor' | 'cliente'>('cliente');
   const [focused, setFocused]   = useState<string | null>(null);
   const { register, isLoading, error } = useAuth();
   const insets = useSafeAreaInsets();
@@ -1161,6 +1410,52 @@ export default function RegisterScreen() {
             </View>
           </View>
 
+          {/* Rol */}
+          <View style={s.fieldWrap}>
+            <Text style={s.fieldLabel}>&gt; ROL</Text>
+            <View style={s.roleRow}>
+
+              <TouchableOpacity
+                style={[
+                  s.roleBtn,
+                  role === 'cliente' && s.roleBtnActive,
+                  role === 'cliente' && s.roleBtnActiveCliente,
+                ]}
+                onPress={() => setRole('cliente')}
+                activeOpacity={0.8}
+              >
+                <Text style={s.roleEmoji}>🛒</Text>
+                <Text style={[s.roleBtnLabel, role === 'cliente' && s.roleBtnLabelActive]}>
+                  CLIENTE
+                </Text>
+                <Text style={[s.roleBtnSub, role === 'cliente' && s.roleBtnSubActive]}>
+                  Consulta productos
+                </Text>
+                {role === 'cliente' && <View style={s.roleCheck}><Text style={s.roleCheckText}>✓</Text></View>}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  s.roleBtn,
+                  role === 'vendedor' && s.roleBtnActive,
+                  role === 'vendedor' && s.roleBtnActiveVendedor,
+                ]}
+                onPress={() => setRole('vendedor')}
+                activeOpacity={0.8}
+              >
+                <Text style={s.roleEmoji}>🏪</Text>
+                <Text style={[s.roleBtnLabel, role === 'vendedor' && s.roleBtnLabelActive]}>
+                  VENDEDOR
+                </Text>
+                <Text style={[s.roleBtnSub, role === 'vendedor' && s.roleBtnSubActive]}>
+                  Gestiona y responde
+                </Text>
+                {role === 'vendedor' && <View style={s.roleCheck}><Text style={s.roleCheckText}>✓</Text></View>}
+              </TouchableOpacity>
+
+            </View>
+          </View>
+
           {/* Divider */}
           <View style={s.divider}>
             <View style={s.dividerLine} />
@@ -1170,7 +1465,7 @@ export default function RegisterScreen() {
 
           <TouchableOpacity
             style={[s.btnPrimary, isLoading && s.btnDisabled]}
-            onPress={() => register({ email, password, username })}
+            onPress={() => register({ email, password, username, role })}
             disabled={isLoading}
             activeOpacity={0.85}
           >
@@ -1252,9 +1547,7 @@ const s = StyleSheet.create({
         shadowOpacity: 0.4,
         shadowRadius: 12,
       },
-      android: {
-        // Evitamos sombras/elevaciones dinámicas en Android para prevenir reflow de layout
-      },
+      android: {},
     }),
   },
   inputIcon: { fontSize: 14, color: E.textMute },
@@ -1263,6 +1556,83 @@ const s = StyleSheet.create({
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : undefined,
   },
 
+  // ── Rol selector ──
+  roleRow: { flexDirection: 'row', gap: 10 },
+
+  roleBtn: {
+    flex: 1,
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: E.border,
+    backgroundColor: 'rgba(255,255,255,0.02)',
+    alignItems: 'center',
+    gap: 4,
+    position: 'relative',
+  },
+  roleBtnActive: {
+    borderWidth: 1.5,
+  },
+  roleBtnActiveCliente: {
+    borderColor: E.violet,
+    backgroundColor: 'rgba(124,58,237,0.10)',
+    ...Platform.select({
+      ios: {
+        shadowColor: E.violet,
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.35,
+        shadowRadius: 12,
+      },
+      android: {},
+    }),
+  },
+  roleBtnActiveVendedor: {
+    borderColor: E.cyan,
+    backgroundColor: 'rgba(34,211,238,0.08)',
+    ...Platform.select({
+      ios: {
+        shadowColor: E.cyan,
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.3,
+        shadowRadius: 12,
+      },
+      android: {},
+    }),
+  },
+
+  roleEmoji: { fontSize: 24, marginBottom: 2 },
+
+  roleBtnLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 2,
+    color: E.textMute,
+  },
+  roleBtnLabelActive: { color: E.text },
+
+  roleBtnSub: {
+    fontSize: 9,
+    color: E.textMute,
+    letterSpacing: 0.3,
+    textAlign: 'center',
+  },
+  roleBtnSubActive: { color: E.textDim },
+
+  roleCheck: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: E.violet,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  roleCheckText: { color: '#fff', fontSize: 9, fontWeight: '800' },
+
+  // ── Divider ──
   divider:     { flexDirection: 'row', alignItems: 'center', gap: 10, marginVertical: 14 },
   dividerLine: { flex: 1, height: 1, backgroundColor: E.border },
   dividerText: { fontSize: 9, color: E.textMute, letterSpacing: 2 },
@@ -1282,8 +1652,6 @@ const s = StyleSheet.create({
   },
   btnGhostText:   { fontSize: 11, color: E.textMute, letterSpacing: 1 },
   btnGhostAccent: { color: E.neonSoft },
-
-  footer: { textAlign: 'center', marginTop: 32, fontSize: 9, color: E.textMute, letterSpacing: 3 },
 });
 
 
@@ -1987,6 +2355,7 @@ export function useThemeColor(
     "@react-navigation/native": "^7.1.8",
     "@supabase/supabase-js": "^2.106.1",
     "@tanstack/react-query": "^5.100.13",
+    "appwrite": "^25.2.0",
     "base64-arraybuffer": "^1.0.2",
     "expo": "~54.0.33",
     "expo-constants": "~18.0.13",
@@ -2206,15 +2575,15 @@ rl.question(
 import { AuthError } from '../../../../shared/domain/errors/AppError';
 import { User } from '../../domain/entities/User';
 import { IAuthRepository } from '../../domain/repositories/IAuthRepository';
-
+//Valida reglas antes de llamar al repositorio.//logica se encuentra aquí-FR
 export class LoginUseCase {
     constructor(private readonly authRepo: IAuthRepository) {}
 
-    async execute(email: string, password: string): Promise<User> {
+    async execute(email: string, password: string): Promise<User> {  //Regla del negocio
         if (!email || !password) 
             throw new AuthError('Email y contraseña son requeridos');
         try {
-            return await this.authRepo.login(email, password);
+            return await this.authRepo.login(email, password); //Llama a la interfaz para realizar el login
         } catch (error) {
             throw new AuthError('Credenciales inválidas', error);
         }
@@ -2226,48 +2595,59 @@ export class LoginUseCase {
 ================================================
 
 import { AuthError } from '../../../../shared/domain/errors/AppError';
-import { User } from '../../domain/entities/User';
+import { User, UserRole } from '../../domain/entities/User';
 import { IAuthRepository } from '../../domain/repositories/IAuthRepository';
 
 export class RegisterUseCase {
     constructor(private readonly authRepo: IAuthRepository) {}
 
-    async execute(email: string, password: string, username: string): Promise<User> {
-        if (!email || !password || !username) 
+    async execute(
+        email: string,
+        password: string,
+        username: string,
+        role: UserRole,          
+    ): Promise<User> {
+        if (!email || !password || !username)
             throw new AuthError('Todos los campos son obligatorios');
         if (password.length < 6)
             throw new AuthError('La contraseña debe tener al menos 6 caracteres');
         if (username.includes(' '))
-            throw new AuthError('El nombre de usuario no puede contener espacios');
+            throw new AuthError('El alias no puede contener espacios');
+        if (!['vendedor', 'cliente'].includes(role))
+            throw new AuthError('Rol inválido');
+
         try {
-            return await this.authRepo.register(email, password, username);
+            return await this.authRepo.register(email, password, username, role);
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Error al registrar usuario';
             throw new AuthError(message);
         }
     }
-};
+}
 
 ================================================
 📄 ARCHIVO: src\features\auth\domain\entities\User.ts
 ================================================
 
+export type UserRole = 'vendedor' | 'cliente';
+
 export interface User {
-    id:         string;
-    email:      string;
-    username:   string;
-    avatarUrl:  string;
+    id:        string;
+    email:     string;
+    username:  string;
+    avatarUrl?: string;
+    role:      UserRole;  // ← NUEVO
 }
 
 ================================================
 📄 ARCHIVO: src\features\auth\domain\repositories\IAuthRepository.ts
 ================================================
 
-import { User } from '../entities/User';
+import { User, UserRole } from '../entities/User';
 
 export interface IAuthRepository {
     login(email: string, password: string): Promise<User>;
-    register(email: string, password: string, username: string): Promise<User>;
+    register(email: string, password: string, username: string, role: UserRole): Promise<User>;
     logout(): Promise<void>;
     getCurrentUser(): Promise<User | null>;
 }
@@ -2277,28 +2657,30 @@ export interface IAuthRepository {
 ================================================
 
 import { supabase } from "../../../../shared/infrastructure/supabase/client";
-import { User } from "../../domain/entities/User";
+import { User, UserRole } from "../../domain/entities/User";
 import { IAuthRepository } from "../../domain/repositories/IAuthRepository";
 
 export class SupabaseAuthRepository implements IAuthRepository {
-  async login(email: string, password: string): Promise<User> {
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-    if (error || !data.user) throw error;
 
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("username, avatar_url")
-      .eq("id", data.user.id)
+  async login(email: string, password: string): Promise<User> {
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error || !data.user) throw new Error(error?.message ?? 'Error al iniciar sesión');
+
+    const { data: profile, error: profileError } = await supabase
+      //mapea datos de Supabase-entidad User del dominio
+    .from('profiles')
+      .select('username, avatar_url, role')
+      .eq('id', data.user.id)
       .single();
 
+    if (profileError) console.warn('Profile fetch error:', profileError.message);
+
     return {
-      id: data.user.id,
-      email: data.user.email!,
-      username: profile?.username ?? "",
+      id:        data.user.id,
+      email:     data.user.email!,
+      username:  profile?.username ?? data.user.user_metadata?.username ?? '',
       avatarUrl: profile?.avatar_url ?? undefined,
+      role:      (profile?.role ?? 'cliente') as UserRole,
     };
   }
 
@@ -2306,21 +2688,40 @@ export class SupabaseAuthRepository implements IAuthRepository {
     email: string,
     password: string,
     username: string,
+    role: UserRole,
   ): Promise<User> {
+    // 1. Crear usuario en Supabase Auth — pasar role Y display_name en metadata
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        data: { username }, // 👈 el trigger lo lee de raw_user_meta_data
+        data: {
+          username,
+          role,                  // ← el trigger lo lee de raw_user_meta_data
+          display_name: username, // ← aparece en Supabase Auth dashboard
+        },
       },
     });
-    if (error) throw error;
-    if (!data.user) throw new Error("No se pudo crear el usuario");
+
+    if (error) throw new Error(error.message);
+    if (!data.user) throw new Error('No se pudo crear el usuario');
+
+    // 2. Upsert en profiles por si el trigger ya insertó sin el role correcto
     const { error: profileError } = await supabase
-      .from("profiles")
-      .insert({ id: data.user.id, username });
+      .from('profiles')
+      .upsert(
+        { id: data.user.id, username, role },
+        { onConflict: 'id' },   // ← si el trigger ya corrió, actualiza el role
+      );
+
     if (profileError) throw new Error(profileError.message);
-    return { id: data.user.id, email: data.user.email!, username };
+
+    return {
+      id:       data.user.id,
+      email:    data.user.email!,
+      username,
+      role,
+    };
   }
 
   async logout(): Promise<void> {
@@ -2328,24 +2729,26 @@ export class SupabaseAuthRepository implements IAuthRepository {
   }
 
   async getCurrentUser(): Promise<User | null> {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const { data: { user } } = await supabase.auth.getUser();
     if (!user) return null;
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("username, avatar_url")
-      .eq("id", user.id)
+
+    const { data: profile, error } = await supabase
+      .from('profiles')
+      .select('username, avatar_url, role')
+      .eq('id', user.id)
       .single();
+
+    if (error) console.warn('getCurrentUser profile error:', error.message);
+
     return {
-      id: user.id,
-      email: user.email!,
-      username: profile?.username ?? "",
+      id:        user.id,
+      email:     user.email!,
+      username:  profile?.username ?? user.user_metadata?.username ?? '',
       avatarUrl: profile?.avatar_url ?? undefined,
+      role:      (profile?.role ?? 'cliente') as UserRole,
     };
   }
 }
-
 
 ================================================
 📄 ARCHIVO: src\features\auth\presentation\hooks\useAuth.ts
@@ -2357,8 +2760,9 @@ import { LoginUseCase } from "../../application/use-cases/LoginUseCase";
 import { RegisterUseCase } from "../../application/use-cases/RegisterUseCase";
 import { SupabaseAuthRepository } from "../../infrastructure/repositories/SupabaseAuthRepository";
 import { useAuthStore } from "../store/authStore";
+import { UserRole } from "../../domain/entities/User";
 
-type RegisterDto = { email: string; password: string; username: string };
+type RegisterDto = { email: string; password: string; username: string; role: UserRole };
 
 const authRepo = new SupabaseAuthRepository();
 const loginUseCase = new LoginUseCase(authRepo);
@@ -2368,10 +2772,9 @@ export function useAuth() {
   const { user, setUser } = useAuthStore();
   const router = useRouter();
 
-  // useMutation de TanStack Query maneja isLoading y error automáticamente
   const loginMutation = useMutation({
     mutationFn: ({ email, password }: { email: string; password: string }) =>
-      loginUseCase.execute(email, password),
+      loginUseCase.execute(email, password), //usa el use case login
     onSuccess: (user) => {
       setUser(user);
       router.replace("/(app)");
@@ -2379,8 +2782,8 @@ export function useAuth() {
   });
 
   const registerMutation = useMutation({
-    mutationFn: ({ email, password, username }: RegisterDto) =>
-      registerUseCase.execute(email, password, username),
+    mutationFn: ({ email, password, username, role }: RegisterDto) =>
+      registerUseCase.execute(email, password, username, role),  // ← pasar role
     onSuccess: (user) => {
       setUser(user);
       router.replace("/(app)");
@@ -2388,9 +2791,8 @@ export function useAuth() {
   });
 
   const logout = async () => {
-    try {
-      await authRepo.logout();
-    } finally {
+    try { await authRepo.logout(); }
+    finally {
       setUser(null);
       router.replace("/(auth)/login");
     }
@@ -2402,11 +2804,40 @@ export function useAuth() {
     register: registerMutation.mutate,
     logout,
     isLoading: loginMutation.isPending || registerMutation.isPending,
-    error:
-      loginMutation.error?.message ?? registerMutation.error?.message ?? null,
+    error: loginMutation.error?.message ?? registerMutation.error?.message ?? null,
   };
 }
 
+
+
+//Single Responsibility (una única funcion )
+// Login
+//Supabase 
+//Auth
+//SendMessage
+
+
+
+//OPEN/CLOSED
+
+//Modificacion de base de datos
+
+//L-Liskov Substitution
+
+//Deben cumplir con los paramateros establecidos, para no romper promesas
+
+//I — Interface Segregation
+
+//IAuth
+//Ichat
+
+//D — Dependency Inversion
+
+// LoginUseCase depende de IAuthRepository (abstracción) realiza 
+//constructor(private readonly authRepo: IAuthRepository) {}
+
+// NO hace esto :
+//onstructor(private readonly authRepo: SupabaseAuthRepository) {} no realiza
 
 ================================================
 📄 ARCHIVO: src\features\auth\presentation\store\authStore.ts
@@ -2418,11 +2849,15 @@ import { User } from '../../domain/entities/User';
 interface AuthState {
     user: User | null;
     setUser: (user: User | null) => void;
-};
+    isVendedor: () => boolean;  // ← helper de conveniencia
+    isCliente:  () => boolean;
+}
 
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuthStore = create<AuthState>((set, get) => ({
     user: null,
     setUser: (user) => set({ user }),
+    isVendedor: () => get().user?.role === 'vendedor',
+    isCliente:  () => get().user?.role === 'cliente',
 }));
 
 ================================================
@@ -2659,34 +3094,51 @@ import { showMessageNotification } from "@shared/infrastructure/notifications/No
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 
-const chatRepo = new SupabaseChatRepository();
+const chatRepo           = new SupabaseChatRepository();
 const sendMessageUseCase = new SendMessageUseCase(chatRepo);
 const getMessagesUseCase = new GetMessagesUseCase(chatRepo);
-const subscribeUseCase = new SubscribeToRoomUseCase(chatRepo);
+const subscribeUseCase   = new SubscribeToRoomUseCase(chatRepo);
 
 export function useChat(roomId: string) {
-  const user = useAuthStore((s) => s.user);
+  const user        = useAuthStore((s) => s.user);
   const queryClient = useQueryClient();
+  const queryKey    = ['messages', roomId];
 
+  // ── Fetch inicial de mensajes ──
   const { data: messages = [], isLoading } = useQuery({
-    queryKey: ["messages", roomId],
-    queryFn: () => getMessagesUseCase.execute(roomId),
-    enabled: !!user,
+    queryKey,
+    queryFn:   () => getMessagesUseCase.execute(roomId),
+    enabled:   !!user,
     staleTime: Infinity,
   });
 
+  // ── Suscripción a mensajes nuevos en tiempo real ──
   useEffect(() => {
+    if (!roomId) return;
+
     const unsubscribe = subscribeUseCase.execute(roomId, (newMsg) => {
-      queryClient.setQueryData(["messages", roomId], (old: Message[] = []) => {
-        const exists = old.some((m) => m.id === newMsg.id);
-        return exists ? old : [...old, newMsg];
+      queryClient.setQueryData(queryKey, (old: Message[] = []) => {
+        // Reemplaza el mensaje temporal si existe, sino agrega el real
+        const hasTempOrReal = old.some(
+          (m) => m.id === newMsg.id || (m.id.startsWith('temp-') && m.content === newMsg.content && m.userId === newMsg.userId)
+        );
+        if (hasTempOrReal) {
+          // Reemplaza el temp por el mensaje real de Supabase
+          return old.map((m) =>
+            m.id.startsWith('temp-') && m.content === newMsg.content && m.userId === newMsg.userId
+              ? newMsg
+              : m.id === newMsg.id ? newMsg : m
+          );
+        }
+        return [...old, newMsg];
       });
 
+      // Notificación solo si el mensaje es de otro usuario
       if (newMsg.userId !== user?.id) {
         showMessageNotification(
           roomId,
-          newMsg.authorUsername ?? "Alguien",
-          newMsg.content,
+          newMsg.authorUsername ?? 'Alguien',
+          newMsg.content || '📷 Imagen',
         );
       }
     });
@@ -2694,37 +3146,43 @@ export function useChat(roomId: string) {
     return unsubscribe;
   }, [roomId]);
 
+  // ── Envío de mensajes con optimistic update ──
   const sendMutation = useMutation({
-    mutationFn: ({ content, imageUrl }: { content: string; imageUrl?: string }) =>
-      sendMessageUseCase.execute(roomId, user!.id, content, imageUrl),
+    mutationFn: ({ content, imageUrl }: { content: string; imageUrl?: string }) => {
+      if (!user) throw new Error('No hay usuario autenticado');
+      return sendMessageUseCase.execute(roomId, user.id, content, imageUrl);
+    },
 
     onMutate: async ({ content, imageUrl }) => {
+      // Cancelar queries en vuelo para evitar sobreescribir el optimistic update
+      await queryClient.cancelQueries({ queryKey });
+
       const tempMsg: Message = {
-        id: `temp-${Date.now()}`,
+        id:             `temp-${Date.now()}`,
         roomId,
-        userId: user!.id,
+        userId:         user!.id,
         content,
         imageUrl,
-        createdAt: new Date(),
+        createdAt:      new Date(),
         authorUsername: user!.username,
       };
-      queryClient.setQueryData(["messages", roomId], (old: Message[] = []) => [
-        ...old,
-        tempMsg,
-      ]);
+
+      queryClient.setQueryData(queryKey, (old: Message[] = []) => [...old, tempMsg]);
       return { tempMsg };
     },
 
     onSuccess: (realMsg, _vars, context) => {
-      queryClient.setQueryData(["messages", roomId], (old: Message[] = []) =>
-        old.map((m) => (m.id === context?.tempMsg.id ? realMsg : m)),
+      // Reemplaza el mensaje temporal por el confirmado de Supabase
+      queryClient.setQueryData(queryKey, (old: Message[] = []) =>
+        old.map((m) => (m.id === context?.tempMsg.id ? realMsg : m))
       );
     },
 
     onError: (_err, _vars, context) => {
+      // Revertir el optimistic update si falla
       if (context?.tempMsg) {
-        queryClient.setQueryData(["messages", roomId], (old: Message[] = []) =>
-          old.filter((m) => m.id !== context.tempMsg.id),
+        queryClient.setQueryData(queryKey, (old: Message[] = []) =>
+          old.filter((m) => m.id !== context.tempMsg.id)
         );
       }
     },
@@ -2734,10 +3192,10 @@ export function useChat(roomId: string) {
     messages,
     sendMessage: sendMutation.mutate,
     isLoading,
-    isSending: sendMutation.isPending,
+    isSending:   sendMutation.isPending,
+    sendError:   sendMutation.error?.message ?? null,
   };
 }
-
 
 ================================================
 📄 ARCHIVO: src\features\chat\presentation\hooks\useRooms.ts
@@ -2816,6 +3274,21 @@ export class ChatError extends AppError {
         super('CHAT_ERROR', message, cause);
     }
 }
+
+================================================
+📄 ARCHIVO: src\shared\infrastructure\appwrite\client.ts
+================================================
+
+import { Client, Account, Databases, Storage } from 'appwrite';
+
+const client = new Client()
+.setEndpoint(process.env.EXPO_PUBLIC_APPWRITE_ENDPOINT!)
+.setProject(process.env.EXPO_PUBLIC_APPWRITE_PROJECT_ID!);
+
+export const account        = new Account(client);
+export const databases      = new Databases(client);
+export const storage        = new Storage(client);
+export const appwriteClient = client;
 
 ================================================
 📄 ARCHIVO: src\shared\infrastructure\notifications\NotificationService.ts

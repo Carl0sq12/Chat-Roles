@@ -17,8 +17,8 @@
 ================================================
 
 EXPO_PUBLIC_GEMINI_API_KEY=AIzaSyC5a38JGOfMrBqzP8YACICsWOTZMN-wLWY
-EXPO_PUBLIC_SUPABASE_URL=https://hiqiwvvtwsizmzsxmdso.supabase.co
-EXPO_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_yovHR88YGverzcH9OOTpug_lqOIBjjC
+EXPO_PUBLIC_SUPABASE_URL=https://wrwluiyznbfqlbfcvxsy.supabase.co
+EXPO_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_FlqaboqTacB4MPyZPitMRA_S1aIixEI
 
 
 EXPO_PUBLIC_APPWRITE_ENDPOINT=https://fra.cloud.appwrite.io/v1
@@ -90,363 +90,20 @@ Read the exact versioned docs at https://docs.expo.dev/versions/v54.0.0/ before 
 
 
 ================================================
-📄 ARCHIVO: app\(app)\chat\[roomId].tsx
+📄 ARCHIVO: app\(adopter)\assistant.tsx
 ================================================
 
-import { useAuthStore } from "@features/auth/presentation/store/authStore";
-import { Message } from "@features/chat/domain/entities/Message";
-import { useChat } from "@features/chat/presentation/hooks/useChat";
-import { pickAndUploadImage } from "@shared/infrastructure/supabase/StorageService";
-import { useLocalSearchParams } from "expo-router";
-import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  ActivityIndicator,
-  Alert,
-  FlatList,
-  Image,
-  Platform,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-
-const E = {
-  bg: '#080810', bg2: '#0d0d1a', card: '#10101e',
-  violet: '#7c3aed',
-  neon: '#a855f7', neonSoft: '#c084fc', cyan: '#22d3ee',
-  text: '#e2e8f0', textDim: '#94a3b8', textMute: '#475569',
-  border: 'rgba(124,58,237,0.22)',
-  red: '#ef4444',
-};
-
-const AVATAR_BG = ['#7c3aed', '#0e7490', '#be185d', '#15803d', '#92400e'];
-
-function MsgAvatar({ name }: { name: string }) {
-  const idx = (name ?? '?').charCodeAt(0) % AVATAR_BG.length;
-  return (
-    <View style={[s.avatar, { backgroundColor: AVATAR_BG[idx] }]}>
-      <Text style={s.avatarText}>{(name ?? '?').charAt(0).toUpperCase()}</Text>
-    </View>
-  );
-}
-
-// InputBar como componente separado para evitar que el padre re-renderice
-// y cierre el teclado al escribir
-function InputBar({
-  onSend,
-  onImagePick,
-  isUploading,
-  isSending,
-  sendError,
-}: {
-  onSend: (text: string) => void;
-  onImagePick: () => void;
-  isUploading: boolean;
-  isSending: boolean;
-  sendError: string | null;
-}) {
-  const [input, setInput] = useState('');
-
-  const handleSend = () => {
-    const trimmed = input.trim();
-    if (!trimmed) return;
-    onSend(trimmed);
-    setInput('');
-  };
-
-  const canSend = input.trim().length > 0 && !isSending;
-
-  return (
-    <View>
-      {/* Error de envío */}
-      {!!sendError && (
-        <View style={s.sendErrorBar}>
-          <Text style={s.sendErrorText}>⚠ {sendError}</Text>
-        </View>
-      )}
-
-      <View style={s.inputBar}>
-        {/* Botón adjuntar imagen */}
-        <TouchableOpacity
-          style={s.attachBtn}
-          onPress={onImagePick}
-          disabled={isUploading || isSending}
-          activeOpacity={0.7}
-        >
-          {isUploading
-            ? <ActivityIndicator size="small" color={E.violet} />
-            : <Text style={s.attachIcon}>⊕</Text>
-          }
-        </TouchableOpacity>
-
-        {/* Input de texto */}
-        <TextInput
-          style={s.input}
-          value={input}
-          onChangeText={setInput}
-          placeholder="Escribe un mensaje..."
-          placeholderTextColor={E.textMute}
-          multiline
-          maxLength={500}
-          blurOnSubmit={false}
-          returnKeyType="default"
-          editable={!isSending}
-        />
-
-        {/* Botón enviar */}
-        <TouchableOpacity
-          style={[s.sendBtn, !canSend && s.sendBtnOff]}
-          onPress={handleSend}
-          disabled={!canSend}
-          activeOpacity={0.85}
-        >
-          {isSending
-            ? <ActivityIndicator size="small" color="#fff" />
-            : <Text style={s.sendIcon}>↑</Text>
-          }
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-}
-
-export default function ChatScreen() {
-  const { roomId }                                            = useLocalSearchParams<{ roomId: string }>();
-  const { messages, sendMessage, isLoading, isSending, sendError } = useChat(roomId);
-  const user                                                  = useAuthStore((s) => s.user);
-  const isVendedor                                            = user?.role === 'vendedor';
-  const [isUploading, setIsUploading]                        = useState(false);
-  const listRef                                               = useRef<FlatList>(null);
-  const prevLengthRef                                         = useRef(0);
-
-  // Scroll al último mensaje cuando llegan nuevos
-  useEffect(() => {
-    if (messages.length > prevLengthRef.current) {
-      prevLengthRef.current = messages.length;
-      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80);
-    }
-  }, [messages.length]);
-
-  const handleSend = useCallback((text: string) => {
-    sendMessage({ content: text });
-  }, [sendMessage]);
-
-  const handleImagePick = useCallback(async () => {
-    try {
-      setIsUploading(true);
-      const imageUrl = await pickAndUploadImage();
-      if (imageUrl) sendMessage({ content: '', imageUrl });
-    } catch (e: any) {
-      Alert.alert('Error', e.message);
-    } finally {
-      setIsUploading(false);
-    }
-  }, [sendMessage]);
-
-  const renderMsg = useCallback(({ item }: { item: Message }) => {
-    const isOwn = item.userId === user?.id;
-
-    // Badge de rol del autor (solo en mensajes ajenos)
-    const authorRole = isOwn ? user?.role : undefined;
-
-    return (
-      <View style={[s.msgRow, isOwn && s.msgRowOwn]}>
-        {!isOwn && <MsgAvatar name={item.authorUsername ?? '?'} />}
-
-        <View style={s.msgStack}>
-          {!isOwn && (
-            <View style={s.msgAuthorRow}>
-              <Text style={s.msgAuthor}>{item.authorUsername}</Text>
-            </View>
-          )}
-
-          <View style={[s.bubble, isOwn ? s.bubbleOwn : s.bubbleOther]}>
-            {item.imageUrl && (
-              <Image
-                source={{ uri: item.imageUrl }}
-                style={s.msgImage}
-                resizeMode="cover"
-              />
-            )}
-            {!!item.content && (
-              <Text style={[s.msgText, isOwn && s.msgTextOwn]}>
-                {item.content}
-              </Text>
-            )}
-            {/* Indicador de mensaje temporal (enviando) */}
-            {item.id.startsWith('temp-') && (
-              <Text style={s.msgSending}>enviando...</Text>
-            )}
-          </View>
-
-          <Text style={[s.msgTime, isOwn && s.msgTimeOwn]}>
-            {item.createdAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-          </Text>
-        </View>
-      </View>
-    );
-  }, [user?.id, user?.role]);
-
-  if (isLoading) {
-    return (
-      <View style={s.loading}>
-        <ActivityIndicator size="large" color={E.violet} />
-        <Text style={s.loadingText}>// cargando mensajes...</Text>
-      </View>
-    );
-  }
-
-  return (
-    <SafeAreaView style={s.container}>
-      {/* Banner de rol en el chat */}
-      <View style={[s.roleBanner, isVendedor ? s.roleBannerVendedor : s.roleBannerCliente]}>
-        <Text style={[s.roleBannerText, isVendedor ? s.roleBannerTextVendedor : s.roleBannerTextCliente]}>
-          {isVendedor
-            ? '🏪 Modo Vendedor — puedes crear canales y responder consultas'
-            : '🛒 Modo Cliente — pregunta lo que necesites sobre nuestros productos'}
-        </Text>
-      </View>
-
-      <FlatList
-        ref={listRef}
-        data={messages}
-        keyExtractor={(m) => m.id}
-        renderItem={renderMsg}
-        contentContainerStyle={s.messagesList}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="always"
-        keyboardDismissMode="none"
-        // Scroll al fondo al montar si hay mensajes
-        onLayout={() => {
-          if (messages.length > 0) {
-            listRef.current?.scrollToEnd({ animated: false });
-          }
-        }}
-      />
-
-      <InputBar
-        onSend={handleSend}
-        onImagePick={handleImagePick}
-        isUploading={isUploading}
-        isSending={isSending}
-        sendError={sendError}
-      />
-    </SafeAreaView>
-  );
-}
-
-const s = StyleSheet.create({
-  container:    { flex: 1, backgroundColor: E.bg },
-  loading:      { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: E.bg, gap: 12 },
-  loadingText:  { color: E.violet, fontSize: 12, letterSpacing: 1 },
-
-  // Banner de rol en la parte superior del chat
-  roleBanner: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-  },
-  roleBannerCliente: {
-    backgroundColor: 'rgba(124,58,237,0.08)',
-    borderBottomColor: 'rgba(124,58,237,0.20)',
-  },
-  roleBannerVendedor: {
-    backgroundColor: 'rgba(34,211,238,0.06)',
-    borderBottomColor: 'rgba(34,211,238,0.18)',
-  },
-  roleBannerText: {
-    fontSize: 11,
-    letterSpacing: 0.3,
-    textAlign: 'center',
-  },
-  roleBannerTextCliente:  { color: E.neonSoft },
-  roleBannerTextVendedor: { color: E.cyan },
-
-  messagesList: { paddingHorizontal: 14, paddingVertical: 14, gap: 10 },
-
-  msgRow:    { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
-  msgRowOwn: { justifyContent: 'flex-end' },
-
-  avatar: {
-    width: 30, height: 30, borderRadius: 9,
-    alignItems: 'center', justifyContent: 'center',
-    marginBottom: 2, flexShrink: 0,
-  },
-  avatarText: { color: '#fff', fontSize: 12, fontWeight: '800' },
-
-  msgStack:     { maxWidth: '75%', gap: 3 },
-  msgAuthorRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 4, marginBottom: 1 },
-  msgAuthor:    { fontSize: 10, color: E.violet, letterSpacing: 1 },
-
-  bubble:      { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 18 },
-  bubbleOther: { backgroundColor: E.card, borderWidth: 1, borderColor: E.border, borderTopLeftRadius: 4 },
-  bubbleOwn: {
-    backgroundColor: E.violet, borderTopRightRadius: 4,
-    shadowColor: E.violet, shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.5, shadowRadius: 14, elevation: 6,
-  },
-
-  msgText:    { fontSize: 14, color: E.text, lineHeight: 20 },
-  msgTextOwn: { color: '#fff' },
-  msgImage:   { width: 200, height: 150, borderRadius: 10, marginBottom: 4 },
-  msgSending: { fontSize: 9, color: 'rgba(255,255,255,0.5)', marginTop: 2, fontStyle: 'italic' },
-  msgTime:    { fontSize: 9, color: E.textMute, letterSpacing: 0.5, paddingHorizontal: 4, alignSelf: 'flex-start' },
-  msgTimeOwn: { alignSelf: 'flex-end' },
-
-  // Error de envío
-  sendErrorBar: {
-    backgroundColor: 'rgba(239,68,68,0.12)',
-    paddingHorizontal: 16,
-    paddingVertical: 6,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(239,68,68,0.25)',
-  },
-  sendErrorText: { color: '#f87171', fontSize: 11, textAlign: 'center' },
-
-  inputBar: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 12, paddingVertical: 10,
-    backgroundColor: E.bg2,
-    borderTopWidth: 1, borderTopColor: E.border,
-    gap: 8,
-  },
-  attachBtn: {
-    width: 40, height: 40, borderRadius: 12,
-    backgroundColor: E.card, borderWidth: 1, borderColor: E.border,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  attachIcon: { fontSize: 20, color: E.violet },
-  input: {
-    flex: 1, backgroundColor: E.card,
-    borderWidth: 1, borderColor: E.border,
-    borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10,
-    maxHeight: 100, fontSize: 14, color: E.text,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-  },
-  sendBtn: {
-    width: 40, height: 40, borderRadius: 12,
-    backgroundColor: E.violet,
-    alignItems: 'center', justifyContent: 'center',
-    shadowColor: E.violet, shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.6, shadowRadius: 12, elevation: 4,
-  },
-  sendBtnOff: { backgroundColor: 'rgba(124,58,237,0.2)', shadowOpacity: 0 },
-  sendIcon:   { color: '#fff', fontSize: 18, fontWeight: '600' },
-});
 
 
 ================================================
-📄 ARCHIVO: app\(app)\index.tsx
+📄 ARCHIVO: app\(adopter)\chat\index.tsx
 ================================================
 
-import { useAuthStore } from "@features/auth/presentation/store/authStore";
-import { Room } from "@features/chat/domain/entities/Message";
-import { useRooms } from "@features/chat/presentation/hooks/useRooms";
-import { useRouter } from "expo-router";
-import { useState } from "react";
+import { useRooms } from '@features/chat/presentation/hooks/useRooms';
+import { Room } from '@features/chat/domain/entities/Message';
+import { E } from '@/constants/theme';
+import { useRouter } from 'expo-router';
+import { useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -456,350 +113,1572 @@ import {
   TextInput,
   TouchableOpacity,
   View,
-} from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { formatDistanceToNow } from 'date-fns';
+import { es } from 'date-fns/locale';
 
-const E = {
-  bg: '#080810', bg2: '#0d0d1a', card: '#10101e',
-  violet: '#7c3aed', violetDk: '#5b21b6',
-  violetDim: 'rgba(124,58,237,0.12)', violetGlw: 'rgba(124,58,237,0.4)',
-  neon: '#a855f7', neonSoft: '#c084fc', cyan: '#22d3ee',
-  text: '#e2e8f0', textDim: '#94a3b8', textMute: '#475569',
-  border: 'rgba(124,58,237,0.22)',
-};
+function RoomCard({ room, onPress }: { room: Room; onPress: () => void }) {
+  const initial = room.name.charAt(0).toUpperCase();
+  const ago     = formatDistanceToNow(room.createdAt, { addSuffix: true, locale: es });
 
-const AVATAR_COLORS = [
-  { bg: ['#7c3aed', '#4f1d96'], shadow: 'rgba(124,58,237,0.5)' },
-  { bg: ['#0e7490', '#164e63'], shadow: 'rgba(14,116,144,0.4)' },
-  { bg: ['#be185d', '#831843'], shadow: 'rgba(190,24,93,0.4)' },
-  { bg: ['#15803d', '#14532d'], shadow: 'rgba(21,128,61,0.4)' },
-  { bg: ['#92400e', '#78350f'], shadow: 'rgba(146,64,14,0.4)' },
-];
-
-function RoomAvatar({ name }: { name: string }) {
-  const idx    = name.charCodeAt(0) % AVATAR_COLORS.length;
-  const colors = AVATAR_COLORS[idx];
-  const letter = name.charAt(0).toUpperCase();
   return (
-    <View style={[s.avatar, {
-      backgroundColor: colors.bg[0],
-      shadowColor: colors.shadow,
-    }]}>
-      <Text style={s.avatarText}>{letter}</Text>
-    </View>
+    <TouchableOpacity style={rc.wrap} onPress={onPress} activeOpacity={0.85}>
+      <View style={rc.avatar}>
+        <Text style={rc.avatarText}>{initial}</Text>
+      </View>
+      <View style={rc.info}>
+        <Text style={rc.name}>#{room.name}</Text>
+        <Text style={rc.time}>{ago}</Text>
+      </View>
+      <Text style={rc.arrow}>›</Text>
+    </TouchableOpacity>
   );
 }
 
-export default function RoomsScreen() {
-  const { rooms, isLoading, createRoom, isCreating, createError } = useRooms();
-  const router      = useRouter();
-  const insets      = useSafeAreaInsets();
-  const isVendedor  = useAuthStore((s) => s.user?.role === 'vendedor');
+const rc = StyleSheet.create({
+  wrap: {
+    flexDirection: 'row', alignItems: 'center', gap: 14,
+    backgroundColor: E.card, borderRadius: E.radius.xl,
+    borderWidth: 1, borderColor: E.border,
+    padding: 14, marginHorizontal: 16, marginBottom: 10,
+    shadowColor: E.primary, shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05, shadowRadius: 6, elevation: 2,
+  },
+  avatar: {
+    width: 46, height: 46, borderRadius: 14,
+    backgroundColor: E.primary, alignItems: 'center', justifyContent: 'center',
+    shadowColor: E.primary, shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3, shadowRadius: 6, elevation: 3,
+  },
+  avatarText: { fontSize: 18, fontWeight: '800', color: '#fff' },
+  info: { flex: 1 },
+  name: { fontSize: 15, fontWeight: '700', color: E.text },
+  time: { fontSize: 11, color: E.textMute, marginTop: 2 },
+  arrow: { fontSize: 22, color: E.textMute },
+});
 
-  const [modalVisible, setModalVisible] = useState(false);
-  const [roomName, setRoomName]         = useState('');
+export default function ChatRoomsScreen() {
+  const insets = useSafeAreaInsets();
+  const router = useRouter();
+  const { rooms, isLoading, createRoom, isCreating } = useRooms();
+
+  const [showModal, setShowModal] = useState(false);
+  const [roomName, setRoomName]   = useState('');
 
   const handleCreate = () => {
-    if (!roomName.trim() || isCreating) return;
+    if (!roomName.trim()) return;
     createRoom(roomName.trim(), {
-      onSuccess: () => { setRoomName(''); setModalVisible(false); },
+      onSuccess: (room: Room) => {
+        setRoomName('');
+        setShowModal(false);
+        router.push(`/(adopter)/chat/${room.id}?name=${encodeURIComponent(room.name)}` as any);
+      },
     });
   };
 
-  const renderRoom = ({ item }: { item: Room }) => (
-    <TouchableOpacity
-      style={s.roomCard}
-      onPress={() => router.push(`/chat/${item.id}?name=${encodeURIComponent(item.name)}`)}
-      activeOpacity={0.75}
-    >
-      {/* left accent bar */}
-      <View style={s.roomAccent} />
-
-      <RoomAvatar name={item.name} />
-
-      <View style={s.roomInfo}>
-        <Text style={s.roomName}># {item.name}</Text>
-        <Text style={s.roomDate}>
-          {item.createdAt.toLocaleDateString('es-ES', { month: 'short', day: 'numeric', year: 'numeric' })}
-        </Text>
-      </View>
-
-      <View style={s.roomRight}>
-        <Text style={s.roomChevron}>›</Text>
-      </View>
-    </TouchableOpacity>
-  );
-
-  if (isLoading) {
-    return (
-      <View style={s.centered}>
-        <ActivityIndicator size="large" color={E.violet} />
-        <Text style={s.loadingText}>// cargando canales...</Text>
-      </View>
-    );
-  }
-
   return (
-    <View style={s.container}>
+    <View style={[s.root, { paddingTop: insets.top }]}>
 
-      {/* ── Subheader ── */}
-      <View style={s.subheader}>
+      {/* Header */}
+      <View style={s.header}>
         <View>
-          <Text style={s.subheaderLabel}>CANALES ACTIVOS</Text>
-          <Text style={s.subheaderSub}>// {rooms.length} disponibles</Text>
+          <Text style={s.title}>Canales</Text>
+          <Text style={s.subtitle}>{rooms.length} canal{rooms.length !== 1 ? 'es' : ''} activo{rooms.length !== 1 ? 's' : ''}</Text>
         </View>
-        <View style={s.subheaderRight}>
-          {/* Indicador de rol en subheader */}
-          <View style={[s.roleTag, isVendedor ? s.roleTagVendedor : s.roleTagCliente]}>
-            <Text style={[s.roleTagText, isVendedor ? s.roleTagTextVendedor : s.roleTagTextCliente]}>
-              {isVendedor ? '🏪 Vendedor' : '🛒 Cliente'}
-            </Text>
-          </View>
-          <View style={s.badge}>
-            <Text style={s.badgeText}>{rooms.length}</Text>
-          </View>
-        </View>
+        <TouchableOpacity style={s.fab} onPress={() => setShowModal(true)} activeOpacity={0.8}>
+          <Text style={s.fabText}>+ Nuevo</Text>
+        </TouchableOpacity>
       </View>
 
-      {/* ── List ── */}
-      <FlatList
-        data={rooms}
-        keyExtractor={(r) => r.id}
-        renderItem={renderRoom}
-        contentContainerStyle={
-          rooms.length === 0
-            ? { flex: 1 }
-            : { padding: 16, gap: 10, paddingBottom: insets.bottom + 100 }
-        }
-        ListEmptyComponent={
-          <View style={s.centered}>
-            <Text style={s.emptyIcon}>◈</Text>
-            <Text style={s.emptyTitle}>
-              {isVendedor ? 'Sin canales' : 'Sin canales disponibles'}
-            </Text>
-            <Text style={s.emptySub}>
-              {isVendedor
-                ? 'Crea uno para comenzar'
-                : 'Espera a que un vendedor cree un canal'}
-            </Text>
-          </View>
-        }
-      />
-
-      {/* ── FAB — solo visible para vendedores ── */}
-      {isVendedor && (
-        <TouchableOpacity
-          style={[s.fab, { bottom: insets.bottom + 28 }]}
-          onPress={() => setModalVisible(true)}
-          activeOpacity={0.85}
-        >
-          <Text style={s.fabText}>+</Text>
-        </TouchableOpacity>
+      {isLoading ? (
+        <View style={s.center}>
+          <ActivityIndicator size="large" color={E.primary} />
+        </View>
+      ) : (
+        <FlatList
+          data={rooms}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => (
+            <RoomCard
+              room={item}
+              onPress={() =>
+                router.push(`/(adopter)/chat/${item.id}?name=${encodeURIComponent(item.name)}` as any)
+              }
+            />
+          )}
+          contentContainerStyle={{ paddingBottom: insets.bottom + 24, paddingTop: 8 }}
+          showsVerticalScrollIndicator={false}
+          ListEmptyComponent={
+            <View style={s.empty}>
+              <Text style={s.emptyEmoji}>💬</Text>
+              <Text style={s.emptyTitle}>Sin canales aún</Text>
+              <Text style={s.emptyText}>Crea el primer canal para chatear con refugios y adoptantes.</Text>
+              <TouchableOpacity style={s.emptyBtn} onPress={() => setShowModal(true)} activeOpacity={0.85}>
+                <Text style={s.emptyBtnText}>+ Crear canal</Text>
+              </TouchableOpacity>
+            </View>
+          }
+        />
       )}
 
-      {/* ── Modal — solo accesible para vendedores ── */}
-      {isVendedor && (
-        <Modal
-          visible={modalVisible}
-          transparent
-          animationType="slide"
-          onRequestClose={() => setModalVisible(false)}
-        >
-          <View style={s.overlay}>
-            <TouchableOpacity style={{ flex: 1 }} onPress={() => setModalVisible(false)} />
-            <View style={[s.dialog, { paddingBottom: insets.bottom + 28 }]}>
-              {/* top glow */}
-              <View style={s.dialogTopLine} />
+      {/* Create room modal */}
+      <Modal visible={showModal} transparent animationType="slide">
+        <View style={m.overlay}>
+          <View style={m.sheet}>
+            <View style={m.handle} />
+            <Text style={m.title}>Nuevo canal</Text>
+            <Text style={m.subtitle}>Elige un nombre descriptivo para el canal.</Text>
 
-              <Text style={s.dialogEyebrow}>// NUEVO CANAL</Text>
-              <Text style={s.dialogTitle}>
-                Nombra tu<Text style={{ color: E.neon }}> canal.</Text>
-              </Text>
-
-              {createError && (
-                <View style={s.errorBox}>
-                  <Text style={s.errorText}>⚠ {createError}</Text>
-                </View>
-              )}
-
-              <View style={s.dialogFieldLabel_wrap}>
-                <Text style={s.dialogFieldLabel}>&gt; NOMBRE</Text>
-              </View>
-
+            <Text style={m.inputLabel}>NOMBRE DEL CANAL</Text>
+            <View style={m.inputWrap}>
+              <Text style={m.inputPrefix}>#</Text>
               <TextInput
-                style={s.dialogInput}
-                placeholder="ej. general, dev-team, ops..."
-                placeholderTextColor={E.textMute}
+                style={m.input}
                 value={roomName}
                 onChangeText={setRoomName}
+                placeholder="adopciones-quito"
+                placeholderTextColor={E.textMute}
+                autoCapitalize="none"
                 autoFocus
-                maxLength={50}
               />
+            </View>
 
-              <View style={s.dialogActions}>
-                <TouchableOpacity
-                  style={s.dialogCancel}
-                  onPress={() => setModalVisible(false)}
-                >
-                  <Text style={s.dialogCancelText}>CANCELAR</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[s.dialogCreate, isCreating && { opacity: 0.5 }]}
-                  onPress={handleCreate}
-                  disabled={isCreating}
-                >
-                  {isCreating
-                    ? <ActivityIndicator color="#fff" size="small" />
-                    : <Text style={s.dialogCreateText}>CREAR  →</Text>
-                  }
-                </TouchableOpacity>
-              </View>
+            <View style={m.btnRow}>
+              <TouchableOpacity style={m.btnCancel} onPress={() => setShowModal(false)} activeOpacity={0.7}>
+                <Text style={m.btnCancelText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[m.btnCreate, (!roomName.trim() || isCreating) && m.btnDisabled]}
+                onPress={handleCreate}
+                disabled={!roomName.trim() || isCreating}
+                activeOpacity={0.85}
+              >
+                {isCreating
+                  ? <ActivityIndicator color="#fff" />
+                  : <Text style={m.btnCreateText}>Crear canal →</Text>
+                }
+              </TouchableOpacity>
             </View>
           </View>
-        </Modal>
-      )}
-
+        </View>
+      </Modal>
     </View>
   );
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: E.bg },
+  root:   { flex: 1, backgroundColor: E.bg },
+  header: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 20, paddingVertical: 16,
+  },
+  title:    { fontSize: 24, fontWeight: '800', color: E.text },
+  subtitle: { fontSize: 12, color: E.textDim, marginTop: 2 },
+  fab: {
+    backgroundColor: E.primary, borderRadius: 12,
+    paddingHorizontal: 14, paddingVertical: 8,
+    shadowColor: E.primary, shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.35, shadowRadius: 8, elevation: 4,
+  },
+  fabText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  empty: { alignItems: 'center', paddingTop: 70, paddingHorizontal: 40, gap: 10 },
+  emptyEmoji: { fontSize: 52 },
+  emptyTitle: { fontSize: 18, fontWeight: '800', color: E.text },
+  emptyText:  { fontSize: 13, color: E.textDim, textAlign: 'center', lineHeight: 20 },
+  emptyBtn: {
+    marginTop: 6, backgroundColor: E.primary,
+    paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12,
+  },
+  emptyBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+});
 
-  subheader: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: 20, paddingVertical: 14,
-    backgroundColor: E.bg2,
-    borderBottomWidth: 1, borderBottomColor: E.border,
+const m = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
+  sheet: {
+    backgroundColor: E.card, borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    padding: 24, paddingTop: 16,
   },
-  subheaderLabel: { fontSize: 10, fontWeight: '600', color: E.textMute, letterSpacing: 2.5 },
-  subheaderSub:   { fontSize: 10, color: E.violet, marginTop: 2, letterSpacing: 1 },
-
-  subheaderRight: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
+  handle: {
+    width: 40, height: 4, backgroundColor: E.border,
+    borderRadius: 2, alignSelf: 'center', marginBottom: 20,
   },
-
-  // Indicador de rol en subheader
-  roleTag: {
-    paddingHorizontal: 10, paddingVertical: 4,
-    borderRadius: 8, borderWidth: 1,
-  },
-  roleTagCliente: {
-    backgroundColor: 'rgba(124,58,237,0.10)',
-    borderColor: 'rgba(124,58,237,0.30)',
-  },
-  roleTagVendedor: {
-    backgroundColor: 'rgba(34,211,238,0.08)',
-    borderColor: 'rgba(34,211,238,0.28)',
-  },
-  roleTagText: {
-    fontSize: 9, fontWeight: '700', letterSpacing: 1,
-  },
-  roleTagTextCliente:  { color: E.neonSoft },
-  roleTagTextVendedor: { color: E.cyan },
-
-  badge: {
-    backgroundColor: E.violet, paddingHorizontal: 10, paddingVertical: 4,
-    borderRadius: 100,
-    shadowColor: E.violet, shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.6, shadowRadius: 10, elevation: 4,
-  },
-  badgeText: { color: '#fff', fontSize: 12, fontWeight: '700' },
-
-  centered:    { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 8 },
-  loadingText: { color: E.violet, fontSize: 12, letterSpacing: 1, marginTop: 12 },
-  emptyIcon:   { fontSize: 40, color: E.border, marginBottom: 8 },
-  emptyTitle:  { fontSize: 18, fontWeight: '700', color: E.textDim, letterSpacing: -0.3 },
-  emptySub:    { fontSize: 12, color: E.textMute, letterSpacing: 0.5, textAlign: 'center', paddingHorizontal: 32 },
-
-  roomCard: {
+  title:    { fontSize: 20, fontWeight: '800', color: E.text, marginBottom: 6 },
+  subtitle: { fontSize: 13, color: E.textDim, marginBottom: 20 },
+  inputLabel: { fontSize: 11, color: E.textDim, letterSpacing: 1.5, fontWeight: '600', marginBottom: 8 },
+  inputWrap: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: E.card,
-    borderRadius: 20, borderWidth: 1, borderColor: E.border,
-    paddingVertical: 14, paddingRight: 16, paddingLeft: 0,
-    gap: 14, overflow: 'hidden',
+    backgroundColor: E.bg2, borderRadius: E.radius.md,
+    borderWidth: 1.5, borderColor: E.border,
+    paddingHorizontal: 14, paddingVertical: 13, marginBottom: 20,
   },
-  roomAccent: {
-    width: 3, alignSelf: 'stretch',
-    backgroundColor: E.violet, opacity: 0.5,
-    borderTopRightRadius: 2, borderBottomRightRadius: 2,
-    marginRight: 11,
+  inputPrefix: { fontSize: 18, color: E.textMute, marginRight: 6 },
+  input: { flex: 1, fontSize: 14, color: E.text },
+  btnRow:    { flexDirection: 'row', gap: 10 },
+  btnCancel: {
+    flex: 1, paddingVertical: 14, borderRadius: E.radius.md,
+    borderWidth: 1.5, borderColor: E.border, alignItems: 'center',
   },
+  btnCancelText: { fontSize: 14, color: E.textDim, fontWeight: '600' },
+  btnCreate: {
+    flex: 2, paddingVertical: 14, borderRadius: E.radius.md,
+    backgroundColor: E.primary, alignItems: 'center',
+    shadowColor: E.primary, shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.35, shadowRadius: 8, elevation: 5,
+  },
+  btnCreateText: { color: '#fff', fontWeight: '800', fontSize: 14 },
+  btnDisabled:   { opacity: 0.45 },
+});
+
+
+================================================
+📄 ARCHIVO: app\(adopter)\chat\[roomId].tsx
+================================================
+
+import { useChat } from '@features/chat/presentation/hooks/useChat';
+import { useAuthStore } from '@features/auth/presentation/store/authStore';
+import { Message } from '@features/chat/domain/entities/Message';
+import { E } from '@/constants/theme';
+import * as ImagePicker from 'expo-image-picker';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useEffect, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  FlatList,
+  Image,
+  KeyboardAvoidingView,
+  Platform,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { format } from 'date-fns';
+import { es } from 'date-fns/locale';
+
+// ── Message bubble ────────────────────────────────────────────────────────────
+function MessageBubble({ msg, isMine }: { msg: Message; isMine: boolean }) {
+  const isTemp = msg.id.startsWith('temp-');
+  const timeStr = format(msg.createdAt, 'HH:mm', { locale: es });
+
+  return (
+    <View style={[b.wrap, isMine ? b.wrapMine : b.wrapOther]}>
+      {!isMine && (
+        <View style={b.avatar}>
+          <Text style={b.avatarText}>
+            {(msg.authorUsername ?? '?').charAt(0).toUpperCase()}
+          </Text>
+        </View>
+      )}
+      <View style={[b.bubble, isMine ? b.bubbleMine : b.bubbleOther, isTemp && b.bubbleTemp]}>
+        {!isMine && msg.authorUsername && (
+          <Text style={b.username}>{msg.authorUsername}</Text>
+        )}
+        {msg.imageUrl ? (
+          <Image source={{ uri: msg.imageUrl }} style={b.image} resizeMode="cover" />
+        ) : null}
+        {msg.content ? (
+          <Text style={[b.text, isMine ? b.textMine : b.textOther]}>{msg.content}</Text>
+        ) : null}
+        <View style={b.footer}>
+          <Text style={[b.time, isMine ? b.timeMine : b.timeOther]}>{timeStr}</Text>
+          {isMine && (
+            <Text style={b.status}>{isTemp ? '⏳' : '✓✓'}</Text>
+          )}
+        </View>
+      </View>
+    </View>
+  );
+}
+
+const b = StyleSheet.create({
+  wrap:      { flexDirection: 'row', marginHorizontal: 12, marginVertical: 3, gap: 8 },
+  wrapMine:  { justifyContent: 'flex-end' },
+  wrapOther: { justifyContent: 'flex-start' },
+
   avatar: {
-    width: 46, height: 46, borderRadius: 14,
-    alignItems: 'center', justifyContent: 'center',
-    shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.7, shadowRadius: 12, elevation: 4,
+    width: 30, height: 30, borderRadius: 10, alignSelf: 'flex-end',
+    backgroundColor: E.primary, alignItems: 'center', justifyContent: 'center',
     flexShrink: 0,
   },
-  avatarText: { color: '#fff', fontSize: 18, fontWeight: '800' },
-  roomInfo:   { flex: 1, minWidth: 0 },
-  roomName:   { fontSize: 15, fontWeight: '700', color: E.text, letterSpacing: -0.2 },
-  roomDate:   { fontSize: 11, color: E.textMute, marginTop: 2 },
-  roomRight:  { flexShrink: 0 },
-  roomChevron:{ fontSize: 22, color: E.border },
+  avatarText: { fontSize: 12, fontWeight: '800', color: '#fff' },
 
-  fab: {
-    position: 'absolute', right: 20,
-    width: 56, height: 56, borderRadius: 18,
-    backgroundColor: E.violet,
-    alignItems: 'center', justifyContent: 'center',
-    shadowColor: E.violet, shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8, shadowRadius: 24, elevation: 10,
+  bubble: {
+    maxWidth: '75%', borderRadius: 18, paddingHorizontal: 12, paddingVertical: 8,
+    shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 3, elevation: 1,
   },
-  fabText: { color: '#fff', fontSize: 28, lineHeight: 32 },
+  bubbleMine:  {
+    backgroundColor: E.primary, borderBottomRightRadius: 4,
+    shadowColor: E.primary,
+  },
+  bubbleOther: {
+    backgroundColor: E.card, borderBottomLeftRadius: 4,
+    borderWidth: 1, borderColor: E.border,
+    shadowColor: '#000',
+  },
+  bubbleTemp: { opacity: 0.7 },
 
+  username:  { fontSize: 10, color: E.primary, fontWeight: '700', marginBottom: 2, letterSpacing: 0.3 },
+  text:      { fontSize: 14, lineHeight: 20 },
+  textMine:  { color: '#fff' },
+  textOther: { color: E.text },
+
+  image: { width: 200, height: 150, borderRadius: 10, marginBottom: 4 },
+
+  footer:   { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 3, justifyContent: 'flex-end' },
+  time:     { fontSize: 10 },
+  timeMine: { color: 'rgba(255,255,255,0.7)' },
+  timeOther:{ color: E.textMute },
+  status:   { fontSize: 10, color: 'rgba(255,255,255,0.7)' },
+});
+
+// ── DateDivider ────────────────────────────────────────────────────────────────
+function DateDivider({ date }: { date: string }) {
+  return (
+    <View style={dd.wrap}>
+      <View style={dd.line} />
+      <Text style={dd.text}>{date}</Text>
+      <View style={dd.line} />
+    </View>
+  );
+}
+const dd = StyleSheet.create({
+  wrap: { flexDirection: 'row', alignItems: 'center', marginVertical: 10, marginHorizontal: 20, gap: 10 },
+  line: { flex: 1, height: 1, backgroundColor: E.border },
+  text: { fontSize: 11, color: E.textMute, fontWeight: '600' },
+});
+
+// ── Main ──────────────────────────────────────────────────────────────────────
+export default function ChatRoomScreen() {
+  const { roomId, name } = useLocalSearchParams<{ roomId: string; name: string }>();
+  const router    = useRouter();
+  const insets    = useSafeAreaInsets();
+  const user      = useAuthStore((s) => s.user);
+  const listRef   = useRef<FlatList>(null);
+  const [text, setText] = useState('');
+
+  const { messages, sendMessage, isLoading, isSending } = useChat(roomId);
+
+  useEffect(() => {
+    if (messages.length > 0) {
+      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
+    }
+  }, [messages.length]);
+
+  const handleSend = () => {
+    if (!text.trim()) return;
+    sendMessage({ content: text.trim() });
+    setText('');
+  };
+
+  const handlePickImage = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') return;
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      quality: 0.7,
+    });
+    if (!result.canceled && result.assets[0].uri) {
+      sendMessage({ content: '', imageUrl: result.assets[0].uri });
+    }
+  };
+
+  // Group messages with date dividers
+  type ListItem = { type: 'date'; date: string } | { type: 'msg'; msg: Message };
+  const listData: ListItem[] = [];
+  let lastDate = '';
+  for (const msg of messages) {
+    const dateStr = format(msg.createdAt, "d 'de' MMMM", { locale: es });
+    if (dateStr !== lastDate) {
+      listData.push({ type: 'date', date: dateStr });
+      lastDate = dateStr;
+    }
+    listData.push({ type: 'msg', msg });
+  }
+
+  const roomName = name ? decodeURIComponent(name) : 'Canal';
+
+  return (
+    <KeyboardAvoidingView
+      style={[s.root, { paddingTop: insets.top }]}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={0}
+    >
+      {/* Header */}
+      <View style={s.header}>
+        <TouchableOpacity onPress={() => router.back()} style={s.backBtn} activeOpacity={0.7}>
+          <Text style={s.backText}>←</Text>
+        </TouchableOpacity>
+        <View style={s.headerAvatar}>
+          <Text style={s.headerAvatarText}>{roomName.charAt(0).toUpperCase()}</Text>
+        </View>
+        <View style={s.headerInfo}>
+          <Text style={s.headerName}>#{roomName}</Text>
+          <Text style={s.headerOnline}>● En línea</Text>
+        </View>
+      </View>
+
+      {/* Messages */}
+      {isLoading ? (
+        <View style={s.center}>
+          <ActivityIndicator color={E.primary} />
+        </View>
+      ) : (
+        <FlatList
+          ref={listRef}
+          data={listData}
+          keyExtractor={(item, i) =>
+            item.type === 'date' ? `date-${i}` : item.msg.id
+          }
+          renderItem={({ item }) =>
+            item.type === 'date' ? (
+              <DateDivider date={item.date} />
+            ) : (
+              <MessageBubble
+                msg={item.msg}
+                isMine={item.msg.userId === user?.id}
+              />
+            )
+          }
+          contentContainerStyle={{ paddingVertical: 12, paddingBottom: 8 }}
+          showsVerticalScrollIndicator={false}
+          onContentSizeChange={() =>
+            listRef.current?.scrollToEnd({ animated: false })
+          }
+          ListEmptyComponent={
+            <View style={s.empty}>
+              <Text style={s.emptyEmoji}>💬</Text>
+              <Text style={s.emptyText}>Sé el primero en escribir</Text>
+            </View>
+          }
+        />
+      )}
+
+      {/* Input bar */}
+      <View style={[s.inputBar, { paddingBottom: insets.bottom + 8 }]}>
+        <TouchableOpacity onPress={handlePickImage} style={s.imgBtn} activeOpacity={0.7}>
+          <Text style={s.imgBtnText}>📷</Text>
+        </TouchableOpacity>
+
+        <TextInput
+          style={s.input}
+          value={text}
+          onChangeText={setText}
+          placeholder="Escribe un mensaje..."
+          placeholderTextColor={E.textMute}
+          multiline
+          maxLength={500}
+          returnKeyType="default"
+        />
+
+        <TouchableOpacity
+          style={[s.sendBtn, (!text.trim() || isSending) && s.sendBtnDisabled]}
+          onPress={handleSend}
+          disabled={!text.trim() || isSending}
+          activeOpacity={0.85}
+        >
+          {isSending
+            ? <ActivityIndicator size="small" color="#fff" />
+            : <Text style={s.sendBtnText}>↑</Text>
+          }
+        </TouchableOpacity>
+      </View>
+    </KeyboardAvoidingView>
+  );
+}
+
+const s = StyleSheet.create({
+  root: { flex: 1, backgroundColor: E.bg },
+
+  header: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 16, paddingVertical: 10,
+    backgroundColor: E.card, borderBottomWidth: 1, borderBottomColor: E.border,
+  },
+  backBtn: { padding: 4 },
+  backText: { fontSize: 22, color: E.text, fontWeight: '700' },
+  headerAvatar: {
+    width: 36, height: 36, borderRadius: 12,
+    backgroundColor: E.primary, alignItems: 'center', justifyContent: 'center',
+  },
+  headerAvatarText: { fontSize: 14, fontWeight: '800', color: '#fff' },
+  headerInfo: { flex: 1 },
+  headerName:   { fontSize: 15, fontWeight: '700', color: E.text },
+  headerOnline: { fontSize: 9, color: E.success, letterSpacing: 1.5 },
+
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  empty:  { alignItems: 'center', paddingTop: 60, gap: 8 },
+  emptyEmoji: { fontSize: 40 },
+  emptyText:  { fontSize: 13, color: E.textMute },
+
+  inputBar: {
+    flexDirection: 'row', alignItems: 'flex-end', gap: 8,
+    paddingHorizontal: 12, paddingTop: 10,
+    backgroundColor: E.card, borderTopWidth: 1, borderTopColor: E.border,
+  },
+  imgBtn: {
+    width: 38, height: 38, borderRadius: 12,
+    backgroundColor: E.bg2, borderWidth: 1, borderColor: E.border,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  imgBtnText: { fontSize: 18 },
+  input: {
+    flex: 1, fontSize: 14, color: E.text,
+    backgroundColor: E.bg2, borderRadius: 14,
+    borderWidth: 1.5, borderColor: E.border,
+    paddingHorizontal: 14, paddingVertical: 9,
+    maxHeight: 100,
+  },
+  sendBtn: {
+    width: 38, height: 38, borderRadius: 12,
+    backgroundColor: E.primary, alignItems: 'center', justifyContent: 'center',
+    shadowColor: E.primary, shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35, shadowRadius: 6, elevation: 4,
+  },
+  sendBtnDisabled: { opacity: 0.4 },
+  sendBtnText: { fontSize: 16, color: '#fff', fontWeight: '800' },
+});
+
+
+================================================
+📄 ARCHIVO: app\(adopter)\index.tsx
+================================================
+
+import { useAuth } from '@features/auth/presentation/hooks/useAuth';
+import { useAuthStore } from '@features/auth/presentation/store/authStore';
+import { usePets } from '@features/pets/presentation/hooks/usePets';
+import { Pet, PetSpecies, PetSize } from '@features/pets/domain/entities/Pet';
+import { E } from '@/constants/theme';
+import { useRouter } from 'expo-router';
+import { useState } from 'react';
+import {
+  ActivityIndicator,
+  FlatList,
+  Image,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+  RefreshControl,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+// ── Filtros ──────────────────────────────────────────────────────────────────
+type FilterKey = 'species' | 'size' | 'gender';
+
+const SPECIES_OPTS: { value: PetSpecies | ''; label: string; emoji: string }[] = [
+  { value: '',        label: 'Todos',   emoji: '🐾' },
+  { value: 'perro',  label: 'Perros',  emoji: '🐶' },
+  { value: 'gato',   label: 'Gatos',   emoji: '🐱' },
+  { value: 'conejo', label: 'Conejos', emoji: '🐰' },
+  { value: 'ave',    label: 'Aves',    emoji: '🦜' },
+  { value: 'otro',   label: 'Otros',   emoji: '🐾' },
+];
+
+const SIZE_OPTS: { value: PetSize | ''; label: string }[] = [
+  { value: '',         label: 'Cualquier tamaño' },
+  { value: 'pequeño',  label: 'Pequeño' },
+  { value: 'mediano',  label: 'Mediano' },
+  { value: 'grande',   label: 'Grande' },
+];
+
+const GENDER_OPTS: { value: string; label: string; emoji: string }[] = [
+  { value: '',        label: 'Ambos',   emoji: '⚥' },
+  { value: 'macho',   label: 'Macho',   emoji: '♂' },
+  { value: 'hembra',  label: 'Hembra',  emoji: '♀' },
+];
+
+// ── Badge helpers ─────────────────────────────────────────────────────────────
+function StatusBadge({ status }: { status: Pet['status'] }) {
+  const map = {
+    disponible:  { label: 'Disponible', color: E.success },
+    en_proceso:  { label: 'En proceso', color: E.warning },
+    adoptado:    { label: 'Adoptado',   color: E.textMute },
+  };
+  const s = map[status];
+  return (
+    <View style={[badge.wrap, { backgroundColor: s.color + '22', borderColor: s.color + '55' }]}>
+      <Text style={[badge.text, { color: s.color }]}>{s.label}</Text>
+    </View>
+  );
+}
+
+const badge = StyleSheet.create({
+  wrap: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, borderWidth: 1 },
+  text: { fontSize: 10, fontWeight: '700' },
+});
+
+// ── Pet Card ──────────────────────────────────────────────────────────────────
+function PetCard({ pet, onPress }: { pet: Pet; onPress: () => void }) {
+  return (
+    <TouchableOpacity style={card.wrap} onPress={onPress} activeOpacity={0.88}>
+      {/* Imagen */}
+      <View style={card.imgWrap}>
+        {pet.imageUrl ? (
+          <Image source={{ uri: pet.imageUrl }} style={card.img} resizeMode="cover" />
+        ) : (
+          <View style={card.imgPlaceholder}>
+            <Text style={card.imgEmoji}>
+              {pet.species === 'perro' ? '🐶' : pet.species === 'gato' ? '🐱' : '🐾'}
+            </Text>
+          </View>
+        )}
+        <View style={card.imgOverlay} />
+        <View style={card.speciesBadge}>
+          <Text style={card.speciesText}>
+            {pet.species === 'perro' ? '🐶' : pet.species === 'gato' ? '🐱' : pet.species === 'conejo' ? '🐰' : pet.species === 'ave' ? '🦜' : '🐾'}
+          </Text>
+        </View>
+      </View>
+
+      {/* Info */}
+      <View style={card.info}>
+        <View style={card.row}>
+          <Text style={card.name} numberOfLines={1}>{pet.name}</Text>
+          <StatusBadge status={pet.status} />
+        </View>
+        <Text style={card.meta}>
+          {pet.breed ? `${pet.breed} · ` : ''}{pet.age ? `${pet.age} año${pet.age !== 1 ? 's' : ''}` : 'Edad desconocida'}
+        </Text>
+        <View style={card.tags}>
+          <View style={card.tag}>
+            <Text style={card.tagText}>{pet.gender === 'macho' ? '♂ Macho' : '♀ Hembra'}</Text>
+          </View>
+          <View style={card.tag}>
+            <Text style={card.tagText}>{pet.size}</Text>
+          </View>
+          {pet.isVaccinated && (
+            <View style={[card.tag, card.tagGreen]}>
+              <Text style={[card.tagText, card.tagTextGreen]}>💉 Vacunado</Text>
+            </View>
+          )}
+        </View>
+        {pet.shelterName && (
+          <Text style={card.shelter} numberOfLines={1}>🏥 {pet.shelterName}</Text>
+        )}
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+const card = StyleSheet.create({
+  wrap: {
+    backgroundColor: E.card, borderRadius: E.radius.xl,
+    borderWidth: 1, borderColor: E.border,
+    marginHorizontal: 16, marginBottom: 14,
+    shadowColor: E.primary, shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06, shadowRadius: 10, elevation: 3,
+    overflow: 'hidden',
+  },
+  imgWrap: { height: 180, backgroundColor: E.bg2 },
+  img: { width: '100%', height: '100%' },
+  imgPlaceholder: {
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: E.primaryDim,
+  },
+  imgEmoji: { fontSize: 56 },
+  imgOverlay: {
+    position: 'absolute', bottom: 0, left: 0, right: 0, height: 60,
+    backgroundColor: 'transparent',
+  },
+  speciesBadge: {
+    position: 'absolute', top: 10, right: 10,
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.9)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  speciesText: { fontSize: 18 },
+  info: { padding: 14 },
+  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
+  name: { fontSize: 17, fontWeight: '800', color: E.text, flex: 1, marginRight: 8 },
+  meta: { fontSize: 12, color: E.textDim, marginBottom: 8 },
+  tags: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 },
+  tag: {
+    paddingHorizontal: 8, paddingVertical: 3,
+    backgroundColor: E.bg2, borderRadius: 8,
+    borderWidth: 1, borderColor: E.border,
+  },
+  tagText: { fontSize: 11, color: E.textDim, fontWeight: '600' },
+  tagGreen: { backgroundColor: '#dcfce7', borderColor: '#86efac' },
+  tagTextGreen: { color: '#16a34a' },
+  shelter: { fontSize: 11, color: E.textMute },
+});
+
+// ── Main Screen ───────────────────────────────────────────────────────────────
+export default function AdopterIndexScreen() {
+  const insets              = useSafeAreaInsets();
+  const router              = useRouter();
+  const { logout }          = useAuth();
+  const user                = useAuthStore((s) => s.user);
+
+  const [species, setSpecies] = useState<PetSpecies | ''>('');
+  const [size,    setSize]    = useState<PetSize | ''>('');
+  const [gender,  setGender]  = useState('');
+
+  const filters = {
+    species: species || undefined,
+    size:    size    || undefined,
+    gender:  gender  || undefined,
+    status:  'disponible',
+  };
+
+  const { pets, isLoading, error } = usePets(filters);
+
+  const [refreshing, setRefreshing] = useState(false);
+  const handleRefresh = () => {
+    setRefreshing(true);
+    setTimeout(() => setRefreshing(false), 1000);
+  };
+
+  return (
+    <View style={[s.root, { paddingTop: insets.top }]}>
+
+      {/* ── Header ── */}
+      <View style={s.header}>
+        <View>
+          <Text style={s.greeting}>Hola, {user?.username ?? 'adoptante'} 👋</Text>
+          <Text style={s.subtitle}>Encuentra tu compañero ideal</Text>
+        </View>
+        <TouchableOpacity onPress={logout} style={s.logoutBtn} activeOpacity={0.7}>
+          <Text style={s.logoutText}>SALIR</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* ── Hero pill ── */}
+      <View style={s.heroPill}>
+        <Text style={s.heroPillText}>
+          🐾 {pets.length} mascotas esperando un hogar
+        </Text>
+      </View>
+
+      {/* ── Species filter ── */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={s.filterRow}
+        style={s.filterScroll}
+      >
+        {SPECIES_OPTS.map((opt) => (
+          <TouchableOpacity
+            key={opt.value}
+            style={[s.filterChip, species === opt.value && s.filterChipActive]}
+            onPress={() => setSpecies(opt.value as PetSpecies | '')}
+            activeOpacity={0.8}
+          >
+            <Text style={s.filterChipEmoji}>{opt.emoji}</Text>
+            <Text style={[s.filterChipText, species === opt.value && s.filterChipTextActive]}>
+              {opt.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+
+      {/* ── Secondary filters ── */}
+      <View style={s.secondaryFilters}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.filterRow}>
+          {SIZE_OPTS.map((opt) => (
+            <TouchableOpacity
+              key={opt.value}
+              style={[s.smallChip, size === opt.value && s.smallChipActive]}
+              onPress={() => setSize(opt.value as PetSize | '')}
+              activeOpacity={0.8}
+            >
+              <Text style={[s.smallChipText, size === opt.value && s.smallChipTextActive]}>
+                {opt.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+          {GENDER_OPTS.map((opt) => (
+            <TouchableOpacity
+              key={opt.value}
+              style={[s.smallChip, gender === opt.value && s.smallChipActive]}
+              onPress={() => setGender(opt.value)}
+              activeOpacity={0.8}
+            >
+              <Text style={[s.smallChipText, gender === opt.value && s.smallChipTextActive]}>
+                {opt.emoji} {opt.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
+
+      {/* ── List ── */}
+      {isLoading ? (
+        <View style={s.center}>
+          <ActivityIndicator size="large" color={E.primary} />
+          <Text style={s.loadingText}>Buscando mascotas...</Text>
+        </View>
+      ) : error ? (
+        <View style={s.center}>
+          <Text style={s.errorEmoji}>😿</Text>
+          <Text style={s.errorText}>{error}</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={pets}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => (
+            <PetCard
+              pet={item}
+              onPress={() => router.push(`/(adopter)/pet/${item.id}` as any)}
+            />
+          )}
+          contentContainerStyle={{ paddingBottom: insets.bottom + 24, paddingTop: 8 }}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              tintColor={E.primary}
+            />
+          }
+          ListEmptyComponent={
+            <View style={s.empty}>
+              <Text style={s.emptyEmoji}>🐾</Text>
+              <Text style={s.emptyTitle}>Sin resultados</Text>
+              <Text style={s.emptyText}>Prueba cambiando los filtros</Text>
+            </View>
+          }
+        />
+      )}
+    </View>
+  );
+}
+
+const s = StyleSheet.create({
+  root: { flex: 1, backgroundColor: E.bg },
+
+  header: {
+    flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20, paddingVertical: 14,
+  },
+  greeting:  { fontSize: 18, fontWeight: '800', color: E.text },
+  subtitle:  { fontSize: 12, color: E.textDim, marginTop: 2 },
+  logoutBtn: {
+    paddingHorizontal: 12, paddingVertical: 7,
+    borderRadius: 10, borderWidth: 1, borderColor: E.border,
+    backgroundColor: E.bg2,
+  },
+  logoutText: { fontSize: 10, fontWeight: '700', color: E.textMute, letterSpacing: 1.5 },
+
+  heroPill: {
+    marginHorizontal: 20, marginBottom: 12,
+    backgroundColor: E.primaryDim, borderRadius: 12,
+    paddingHorizontal: 14, paddingVertical: 8,
+    borderWidth: 1, borderColor: E.border,
+  },
+  heroPillText: { fontSize: 13, color: E.primaryDark, fontWeight: '600' },
+
+  filterScroll: { flexGrow: 0 },
+  filterRow:    { paddingHorizontal: 16, gap: 8, paddingBottom: 2 },
+
+  filterChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 14, paddingVertical: 8,
+    borderRadius: 24, borderWidth: 1.5, borderColor: E.border,
+    backgroundColor: E.card,
+  },
+  filterChipActive: {
+    backgroundColor: E.primary, borderColor: E.primary,
+  },
+  filterChipEmoji: { fontSize: 15 },
+  filterChipText: { fontSize: 12, fontWeight: '600', color: E.textDim },
+  filterChipTextActive: { color: '#fff' },
+
+  secondaryFilters: { marginTop: 8, marginBottom: 4 },
+
+  smallChip: {
+    paddingHorizontal: 12, paddingVertical: 5,
+    borderRadius: 20, borderWidth: 1, borderColor: E.border,
+    backgroundColor: E.bg2,
+  },
+  smallChipActive: { backgroundColor: E.primaryDim, borderColor: E.primary },
+  smallChipText: { fontSize: 11, color: E.textDim, fontWeight: '600' },
+  smallChipTextActive: { color: E.primaryDark },
+
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10 },
+  loadingText: { color: E.textDim, fontSize: 14 },
+  errorEmoji: { fontSize: 48 },
+  errorText:  { color: E.danger, fontSize: 14, textAlign: 'center', paddingHorizontal: 20 },
+
+  empty: { alignItems: 'center', paddingTop: 60, gap: 8 },
+  emptyEmoji: { fontSize: 52 },
+  emptyTitle: { fontSize: 18, fontWeight: '800', color: E.text },
+  emptyText:  { fontSize: 13, color: E.textDim },
+});
+
+
+================================================
+📄 ARCHIVO: app\(adopter)\pet\[id].tsx
+================================================
+
+import { useRequests } from '@features/requests/presentation/hooks/useRequests';
+import { E } from '@/constants/theme';
+import { SupabasePetRepository } from '@features/pets/infrastructure/repositories/SupabasePetRepository';
+import { Pet } from '@features/pets/domain/entities/Pet';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  Image,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+const petRepo = new SupabasePetRepository();
+
+function InfoChip({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={chip.wrap}>
+      <Text style={chip.label}>{label}</Text>
+      <Text style={chip.value}>{value}</Text>
+    </View>
+  );
+}
+const chip = StyleSheet.create({
+  wrap: {
+    flex: 1, minWidth: '45%',
+    backgroundColor: E.bg2, borderRadius: E.radius.md,
+    borderWidth: 1, borderColor: E.border,
+    padding: 12, gap: 3,
+  },
+  label: { fontSize: 10, color: E.textMute, fontWeight: '600', letterSpacing: 1 },
+  value: { fontSize: 14, color: E.text, fontWeight: '700' },
+});
+
+export default function PetDetailScreen() {
+  const { id }    = useLocalSearchParams<{ id: string }>();
+  const router    = useRouter();
+  const insets    = useSafeAreaInsets();
+
+  const [pet, setPet]       = useState<Pet | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError]   = useState<string | null>(null);
+  const [showModal, setShowModal] = useState(false);
+  const [message, setMessage]     = useState('');
+  const [sent, setSent]           = useState(false);
+
+  const { sendRequest, isSending, sendError } = useRequests();
+
+  useEffect(() => {
+    if (!id) return;
+    petRepo.getById(id)
+      .then(setPet)
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  }, [id]);
+
+  const handleSendRequest = () => {
+    if (!pet) return;
+    sendRequest(
+      { petId: pet.id, shelterId: pet.shelterId, message },
+      {
+        onSuccess: () => {
+          setSent(true);
+          setTimeout(() => setShowModal(false), 1800);
+        },
+      }
+    );
+  };
+
+  if (loading) {
+    return (
+      <View style={s.center}>
+        <ActivityIndicator size="large" color={E.primary} />
+      </View>
+    );
+  }
+
+  if (error || !pet) {
+    return (
+      <View style={s.center}>
+        <Text style={s.errorEmoji}>😿</Text>
+        <Text style={s.errorText}>{error ?? 'Mascota no encontrada'}</Text>
+        <TouchableOpacity onPress={() => router.back()} style={s.backBtn}>
+          <Text style={s.backBtnText}>← Volver</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  const speciesEmoji =
+    pet.species === 'perro'  ? '🐶' :
+    pet.species === 'gato'   ? '🐱' :
+    pet.species === 'conejo' ? '🐰' :
+    pet.species === 'ave'    ? '🦜' : '🐾';
+
+  return (
+    <View style={[s.root, { paddingTop: insets.top }]}>
+
+      {/* Back button */}
+      <TouchableOpacity
+        style={[s.backFab, { top: insets.top + 12 }]}
+        onPress={() => router.back()}
+        activeOpacity={0.8}
+      >
+        <Text style={s.backFabText}>←</Text>
+      </TouchableOpacity>
+
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: insets.bottom + 100 }}>
+
+        {/* Hero image */}
+        <View style={s.imgWrap}>
+          {pet.imageUrl ? (
+            <Image source={{ uri: pet.imageUrl }} style={s.img} resizeMode="cover" />
+          ) : (
+            <View style={s.imgPlaceholder}>
+              <Text style={s.imgEmoji}>{speciesEmoji}</Text>
+            </View>
+          )}
+          <View style={s.imgGradient} />
+        </View>
+
+        {/* Content */}
+        <View style={s.content}>
+          {/* Name + status */}
+          <View style={s.nameRow}>
+            <Text style={s.name}>{pet.name}</Text>
+            <View style={[
+              s.statusBadge,
+              pet.status === 'disponible' ? s.statusGreen :
+              pet.status === 'en_proceso' ? s.statusYellow : s.statusGray,
+            ]}>
+              <Text style={s.statusDot}>●</Text>
+              <Text style={s.statusText}>
+                {pet.status === 'disponible' ? 'Disponible' :
+                 pet.status === 'en_proceso' ? 'En proceso' : 'Adoptado'}
+              </Text>
+            </View>
+          </View>
+
+          {pet.breed && (
+            <Text style={s.breed}>{speciesEmoji} {pet.breed}</Text>
+          )}
+          {pet.shelterName && (
+            <Text style={s.shelterName}>🏥 {pet.shelterName}</Text>
+          )}
+
+          {/* Info grid */}
+          <View style={s.grid}>
+            <InfoChip label="EDAD" value={pet.age ? `${pet.age} año${pet.age !== 1 ? 's' : ''}` : 'Desconocida'} />
+            <InfoChip label="GÉNERO" value={pet.gender === 'macho' ? '♂ Macho' : '♀ Hembra'} />
+            <InfoChip label="TAMAÑO" value={pet.size.charAt(0).toUpperCase() + pet.size.slice(1)} />
+            <InfoChip label="ESPECIE" value={pet.species.charAt(0).toUpperCase() + pet.species.slice(1)} />
+          </View>
+
+          {/* Health badges */}
+          <View style={s.healthRow}>
+            <View style={[s.healthBadge, pet.isVaccinated ? s.healthBadgeOn : s.healthBadgeOff]}>
+              <Text style={s.healthBadgeText}>
+                {pet.isVaccinated ? '✅' : '❌'} Vacunas
+              </Text>
+            </View>
+            <View style={[s.healthBadge, pet.isSterilized ? s.healthBadgeOn : s.healthBadgeOff]}>
+              <Text style={s.healthBadgeText}>
+                {pet.isSterilized ? '✅' : '❌'} Esterilizado
+              </Text>
+            </View>
+          </View>
+
+          {/* Description */}
+          {pet.description && (
+            <View style={s.descCard}>
+              <Text style={s.descTitle}>Sobre {pet.name}</Text>
+              <Text style={s.descText}>{pet.description}</Text>
+            </View>
+          )}
+        </View>
+      </ScrollView>
+
+      {/* CTA button */}
+      {pet.status === 'disponible' && (
+        <View style={[s.ctaBar, { paddingBottom: insets.bottom + 12 }]}>
+          <TouchableOpacity
+            style={s.ctaBtn}
+            onPress={() => setShowModal(true)}
+            activeOpacity={0.85}
+          >
+            <Text style={s.ctaBtnText}>🐾 Solicitar adopción</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* ── Adoption Request Modal ── */}
+      <Modal visible={showModal} transparent animationType="slide">
+        <View style={m.overlay}>
+          <View style={m.sheet}>
+            <View style={m.handle} />
+
+            {sent ? (
+              <View style={m.successWrap}>
+                <Text style={m.successEmoji}>🎉</Text>
+                <Text style={m.successTitle}>¡Solicitud enviada!</Text>
+                <Text style={m.successText}>
+                  El refugio revisará tu solicitud y te contactará pronto.
+                </Text>
+              </View>
+            ) : (
+              <>
+                <Text style={m.title}>Solicitar adopción</Text>
+                <Text style={m.subtitle}>
+                  Cuéntale al refugio por qué serías el hogar perfecto para <Text style={{ fontWeight: '800' }}>{pet.name}</Text>
+                </Text>
+
+                {sendError && (
+                  <View style={m.errorBox}>
+                    <Text style={m.errorText}>⚠ {sendError}</Text>
+                  </View>
+                )}
+
+                <Text style={m.inputLabel}>MENSAJE (opcional)</Text>
+                <TextInput
+                  style={m.input}
+                  value={message}
+                  onChangeText={setMessage}
+                  placeholder="Ej: Tengo un jardín grande, experiencia con perros..."
+                  placeholderTextColor={E.textMute}
+                  multiline
+                  numberOfLines={4}
+                  textAlignVertical="top"
+                />
+
+                <View style={m.btnRow}>
+                  <TouchableOpacity
+                    style={m.btnCancel}
+                    onPress={() => setShowModal(false)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={m.btnCancelText}>Cancelar</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[m.btnSend, isSending && m.btnDisabled]}
+                    onPress={handleSendRequest}
+                    disabled={isSending}
+                    activeOpacity={0.85}
+                  >
+                    {isSending
+                      ? <ActivityIndicator color="#fff" />
+                      : <Text style={m.btnSendText}>Enviar solicitud →</Text>
+                    }
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
+    </View>
+  );
+}
+
+const s = StyleSheet.create({
+  root:   { flex: 1, backgroundColor: E.bg },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, backgroundColor: E.bg },
+
+  backFab: {
+    position: 'absolute', left: 16, zIndex: 10,
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.9)',
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15, shadowRadius: 6, elevation: 4,
+  },
+  backFabText: { fontSize: 18, color: E.text, fontWeight: '700' },
+
+  imgWrap: { height: 300, backgroundColor: E.bg2 },
+  img: { width: '100%', height: '100%' },
+  imgPlaceholder: {
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: E.primaryDim,
+  },
+  imgEmoji: { fontSize: 80 },
+  imgGradient: {
+    position: 'absolute', bottom: 0, left: 0, right: 0, height: 80,
+  },
+
+  content: { padding: 20, gap: 16 },
+
+  nameRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  name:    { fontSize: 28, fontWeight: '800', color: E.text, flex: 1 },
+
+  statusBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, borderWidth: 1,
+  },
+  statusGreen:  { backgroundColor: '#dcfce7', borderColor: '#86efac' },
+  statusYellow: { backgroundColor: '#fef9c3', borderColor: '#fde047' },
+  statusGray:   { backgroundColor: E.bg2,     borderColor: E.border },
+  statusDot:    { fontSize: 8 },
+  statusText:   { fontSize: 11, fontWeight: '700', color: E.text },
+
+  breed:       { fontSize: 14, color: E.textDim, marginTop: -8 },
+  shelterName: { fontSize: 13, color: E.textMute },
+
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+
+  healthRow: { flexDirection: 'row', gap: 10 },
+  healthBadge: {
+    flex: 1, paddingVertical: 10, paddingHorizontal: 12,
+    borderRadius: E.radius.md, borderWidth: 1, alignItems: 'center',
+  },
+  healthBadgeOn:  { backgroundColor: '#dcfce7', borderColor: '#86efac' },
+  healthBadgeOff: { backgroundColor: E.bg2,     borderColor: E.border },
+  healthBadgeText: { fontSize: 12, fontWeight: '700', color: E.text },
+
+  descCard: {
+    backgroundColor: E.card, borderRadius: E.radius.lg,
+    borderWidth: 1, borderColor: E.border, padding: 16, gap: 8,
+  },
+  descTitle: { fontSize: 14, fontWeight: '800', color: E.text },
+  descText:  { fontSize: 14, color: E.textDim, lineHeight: 22 },
+
+  ctaBar: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    backgroundColor: E.card, borderTopWidth: 1, borderTopColor: E.border,
+    paddingHorizontal: 20, paddingTop: 12,
+  },
+  ctaBtn: {
+    backgroundColor: E.primary, borderRadius: E.radius.md,
+    paddingVertical: 16, alignItems: 'center',
+    shadowColor: E.primary, shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4, shadowRadius: 12, elevation: 6,
+  },
+  ctaBtnText: { color: '#fff', fontSize: 16, fontWeight: '800' },
+
+  errorEmoji: { fontSize: 48 },
+  errorText:  { color: E.danger, fontSize: 14 },
+  backBtn:    { marginTop: 8, padding: 12 },
+  backBtnText: { color: E.primary, fontWeight: '700' },
+});
+
+const m = StyleSheet.create({
   overlay: {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.7)',
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.4)',
     justifyContent: 'flex-end',
   },
-  dialog: {
-    backgroundColor: E.card,
-    borderTopLeftRadius: 28, borderTopRightRadius: 28,
-    borderWidth: 1, borderBottomWidth: 0, borderColor: E.border,
-    padding: 28, overflow: 'hidden',
+  sheet: {
+    backgroundColor: E.card, borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    padding: 24, paddingTop: 16,
+    shadowColor: '#000', shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.1, shadowRadius: 20, elevation: 10,
   },
-  dialogTopLine: {
-    position: 'absolute', top: 0, left: 60, right: 60,
-    height: 1, backgroundColor: E.neon, opacity: 0.5,
+  handle: {
+    width: 40, height: 4, backgroundColor: E.border,
+    borderRadius: 2, alignSelf: 'center', marginBottom: 20,
   },
-  dialogEyebrow: { fontSize: 10, color: E.violet, letterSpacing: 2, marginBottom: 8 },
-  dialogTitle: {
-    fontSize: 32, fontWeight: '800', color: '#fff',
-    letterSpacing: -1, marginBottom: 20,
-  },
+  title:    { fontSize: 20, fontWeight: '800', color: E.text, marginBottom: 6 },
+  subtitle: { fontSize: 13, color: E.textDim, lineHeight: 20, marginBottom: 16 },
 
   errorBox: {
-    backgroundColor: 'rgba(239,68,68,0.1)', borderRadius: 10,
-    padding: 12, marginBottom: 14,
-    borderLeftWidth: 2, borderLeftColor: '#ef4444',
+    backgroundColor: 'rgba(239,68,68,0.08)',
+    borderRadius: E.radius.sm, padding: 10, marginBottom: 12,
+    borderLeftWidth: 3, borderLeftColor: E.danger,
   },
-  errorText: { color: '#f87171', fontSize: 12 },
+  errorText: { color: E.danger, fontSize: 12 },
 
-  dialogFieldLabel_wrap: { marginBottom: 8 },
-  dialogFieldLabel: { fontSize: 9, color: E.violet, letterSpacing: 3 },
-
-  dialogInput: {
-    backgroundColor: 'rgba(255,255,255,0.03)',
-    borderWidth: 1, borderColor: E.border, borderRadius: 14,
-    paddingHorizontal: 16, paddingVertical: 14,
-    fontSize: 14, color: E.text, marginBottom: 20,
-    fontFamily: 'System',
+  inputLabel: { fontSize: 11, color: E.textDim, letterSpacing: 1.5, fontWeight: '600', marginBottom: 6 },
+  input: {
+    backgroundColor: E.bg2, borderRadius: E.radius.md,
+    borderWidth: 1.5, borderColor: E.border,
+    paddingHorizontal: 14, paddingVertical: 12,
+    fontSize: 14, color: E.text, minHeight: 100, marginBottom: 20,
   },
 
-  dialogActions: { flexDirection: 'row', gap: 10 },
-  dialogCancel: {
-    flex: 1, paddingVertical: 14, borderRadius: 14,
+  btnRow:    { flexDirection: 'row', gap: 10 },
+  btnCancel: {
+    flex: 1, paddingVertical: 15, borderRadius: E.radius.md,
+    borderWidth: 1.5, borderColor: E.border, alignItems: 'center',
+  },
+  btnCancelText: { fontSize: 14, color: E.textDim, fontWeight: '600' },
+  btnSend: {
+    flex: 2, paddingVertical: 15, borderRadius: E.radius.md,
+    backgroundColor: E.primary, alignItems: 'center',
+    shadowColor: E.primary, shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.35, shadowRadius: 8, elevation: 5,
+  },
+  btnSendText:  { color: '#fff', fontSize: 14, fontWeight: '800' },
+  btnDisabled:  { opacity: 0.5 },
+
+  successWrap:  { alignItems: 'center', paddingVertical: 24, gap: 10 },
+  successEmoji: { fontSize: 56 },
+  successTitle: { fontSize: 22, fontWeight: '800', color: E.text },
+  successText:  { fontSize: 13, color: E.textDim, textAlign: 'center', lineHeight: 20 },
+});
+
+================================================
+📄 ARCHIVO: app\(adopter)\requests.tsx
+================================================
+
+import { useRequests } from '@features/requests/presentation/hooks/useRequests';
+import { AdoptionRequest } from '@features/requests/domain/entities/Request';
+import { E } from '@/constants/theme';
+import { Image, ActivityIndicator, FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
+import { formatDistanceToNow } from 'date-fns';
+import { es } from 'date-fns/locale';
+
+function StatusPill({ status }: { status: AdoptionRequest['status'] }) {
+  const map = {
+    pendiente: { label: 'Pendiente', bg: '#fef9c3', border: '#fde047', text: '#854d0e', dot: '⏳' },
+    aprobada:  { label: 'Aprobada',  bg: '#dcfce7', border: '#86efac', text: '#166534', dot: '✅' },
+    rechazada: { label: 'Rechazada', bg: '#fee2e2', border: '#fca5a5', text: '#991b1b', dot: '❌' },
+  };
+  const c = map[status];
+  return (
+    <View style={[pill.wrap, { backgroundColor: c.bg, borderColor: c.border }]}>
+      <Text style={pill.dot}>{c.dot}</Text>
+      <Text style={[pill.text, { color: c.text }]}>{c.label}</Text>
+    </View>
+  );
+}
+
+const pill = StyleSheet.create({
+  wrap: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 10, paddingVertical: 4,
+    borderRadius: 10, borderWidth: 1,
+  },
+  dot:  { fontSize: 11 },
+  text: { fontSize: 11, fontWeight: '700' },
+});
+
+function RequestCard({ item }: { item: AdoptionRequest }) {
+  const router = useRouter();
+  const ago = formatDistanceToNow(item.createdAt, { addSuffix: true, locale: es });
+
+  return (
+    <TouchableOpacity
+      style={rc.wrap}
+      onPress={() => router.push(`/(adopter)/pet/${item.petId}` as any)}
+      activeOpacity={0.88}
+    >
+      {/* Pet image */}
+      <View style={rc.imgWrap}>
+        {item.petImage ? (
+          <Image source={{ uri: item.petImage }} style={rc.img} resizeMode="cover" />
+        ) : (
+          <View style={rc.imgPlaceholder}>
+            <Text style={rc.imgEmoji}>🐾</Text>
+          </View>
+        )}
+      </View>
+
+      {/* Info */}
+      <View style={rc.info}>
+        <View style={rc.topRow}>
+          <Text style={rc.petName} numberOfLines={1}>{item.petName ?? 'Mascota'}</Text>
+          <StatusPill status={item.status} />
+        </View>
+        {item.message && (
+          <Text style={rc.message} numberOfLines={2}>{`"${item.message}"`}</Text>
+        )}
+        <Text style={rc.time}>{ago}</Text>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+const rc = StyleSheet.create({
+  wrap: {
+    flexDirection: 'row', gap: 12,
+    backgroundColor: E.card, borderRadius: E.radius.xl,
     borderWidth: 1, borderColor: E.border,
+    padding: 14, marginHorizontal: 16, marginBottom: 12,
+    shadowColor: E.primary, shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05, shadowRadius: 8, elevation: 2,
+  },
+  imgWrap: { width: 72, height: 72, borderRadius: 16, overflow: 'hidden', backgroundColor: E.bg2 },
+  img: { width: '100%', height: '100%' },
+  imgPlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: E.primaryDim },
+  imgEmoji: { fontSize: 28 },
+  info: { flex: 1, gap: 6 },
+  topRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  petName: { fontSize: 15, fontWeight: '800', color: E.text, flex: 1, marginRight: 8 },
+  message: { fontSize: 12, color: E.textDim, lineHeight: 17, fontStyle: 'italic' },
+  time:    { fontSize: 11, color: E.textMute },
+});
+
+export default function RequestsScreen() {
+  const insets = useSafeAreaInsets();
+  const { myRequests, isLoading } = useRequests();
+
+  return (
+    <View style={[s.root, { paddingTop: insets.top }]}>
+
+      {/* Header */}
+      <View style={s.header}>
+        <Text style={s.title}>Mis solicitudes</Text>
+        <Text style={s.subtitle}>{myRequests.length} solicitud{myRequests.length !== 1 ? 'es' : ''} enviada{myRequests.length !== 1 ? 's' : ''}</Text>
+      </View>
+
+      {isLoading ? (
+        <View style={s.center}>
+          <ActivityIndicator size="large" color={E.primary} />
+        </View>
+      ) : (
+        <FlatList
+          data={myRequests}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => <RequestCard item={item} />}
+          contentContainerStyle={{ paddingBottom: insets.bottom + 24, paddingTop: 8 }}
+          showsVerticalScrollIndicator={false}
+          ListEmptyComponent={
+            <View style={s.empty}>
+              <Text style={s.emptyEmoji}>📋</Text>
+              <Text style={s.emptyTitle}>Sin solicitudes aún</Text>
+              <Text style={s.emptyText}>
+                Explora las mascotas disponibles y envía tu primera solicitud de adopción.
+              </Text>
+            </View>
+          }
+        />
+      )}
+    </View>
+  );
+}
+
+const s = StyleSheet.create({
+  root: { flex: 1, backgroundColor: E.bg },
+  header: { paddingHorizontal: 20, paddingVertical: 16 },
+  title:    { fontSize: 24, fontWeight: '800', color: E.text },
+  subtitle: { fontSize: 12, color: E.textDim, marginTop: 2 },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  empty: { alignItems: 'center', paddingTop: 70, paddingHorizontal: 40, gap: 10 },
+  emptyEmoji: { fontSize: 52 },
+  emptyTitle: { fontSize: 18, fontWeight: '800', color: E.text },
+  emptyText:  { fontSize: 13, color: E.textDim, textAlign: 'center', lineHeight: 20 },
+});
+
+
+================================================
+📄 ARCHIVO: app\(adopter)\_layout.tsx
+================================================
+
+import { HapticTab } from '@/components/haptic-tab';
+import { E } from '@/constants/theme';
+import { Tabs } from 'expo-router';
+import { Platform, StyleSheet, Text, View } from 'react-native';
+
+function TabIcon({ emoji, label, focused }: { emoji: string; label: string; focused: boolean }) {
+  return (
+    <View style={[styles.tabItem, focused && styles.tabItemFocused]}>
+      {focused && <View style={styles.tabPill} />}
+      <Text style={styles.tabEmoji}>{emoji}</Text>
+      <Text style={[styles.tabLabel, focused && styles.tabLabelFocused]}>{label}</Text>
+    </View>
+  );
+}
+
+export default function AdopterLayout() {
+  return (
+    <Tabs
+      screenOptions={{
+        headerShown: false,
+        tabBarButton: HapticTab,
+        tabBarStyle: styles.tabBar,
+        tabBarShowLabel: false,
+      }}
+    >
+      <Tabs.Screen
+        name="index"
+        options={{
+          title: 'Explorar',
+          tabBarIcon: ({ focused }) => (
+            <TabIcon emoji="🐾" label="Explorar" focused={focused} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="requests"
+        options={{
+          title: 'Solicitudes',
+          tabBarIcon: ({ focused }) => (
+            <TabIcon emoji="📋" label="Solicitudes" focused={focused} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="chat/index"
+        options={{
+          title: 'Chat',
+          tabBarIcon: ({ focused }) => (
+            <TabIcon emoji="💬" label="Chat" focused={focused} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="assistant"
+        options={{
+          title: 'VetBot',
+          tabBarIcon: ({ focused }) => (
+            <TabIcon emoji="🤖" label="VetBot" focused={focused} />
+          ),
+        }}
+      />
+      {/* Rutas sin tab */}
+      <Tabs.Screen name="pet/[id]"    options={{ href: null }} />
+      <Tabs.Screen name="chat/[roomId]" options={{ href: null }} />
+    </Tabs>
+  );
+}
+
+const styles = StyleSheet.create({
+  tabBar: {
+    backgroundColor: E.card,
+    borderTopWidth: 1,
+    borderTopColor: E.border,
+    height: Platform.OS === 'ios' ? 84 : 64,
+    paddingBottom: Platform.OS === 'ios' ? 20 : 8,
+    paddingTop: 8,
+    elevation: 0,
+    shadowOpacity: 0,
+  },
+  tabItem: {
     alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 16,
+    gap: 2,
+    minWidth: 60,
   },
-  dialogCancelText: { color: E.textMute, fontSize: 11, letterSpacing: 1.5 },
-  dialogCreate: {
-    flex: 1, paddingVertical: 14, borderRadius: 14,
-    backgroundColor: E.violet, alignItems: 'center',
-    shadowColor: E.violet, shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.6, shadowRadius: 16, elevation: 6,
+  tabItemFocused: {
+    backgroundColor: E.primaryDim,
   },
-  dialogCreateText: { color: '#fff', fontSize: 12, letterSpacing: 2, fontWeight: '600' },
+  tabPill: {
+    position: 'absolute',
+    top: -2,
+    width: 20,
+    height: 3,
+    backgroundColor: E.primary,
+    borderRadius: 2,
+  },
+  tabEmoji: {
+    fontSize: 20,
+  },
+  tabLabel: {
+    fontSize: 9,
+    fontWeight: '600',
+    color: E.textMute,
+    letterSpacing: 0.5,
+  },
+  tabLabelFocused: {
+    color: E.primary,
+  },
 });
 
 
@@ -827,7 +1706,7 @@ const E = {
 export default function AppLayout() {
   const { logout } = useAuth();
   const user       = useAuthStore((s) => s.user);
-  const isVendedor = user?.role === 'vendedor';
+  const isVendedor = (user?.role as any) === 'vendedor';
 
   return (
     <Stack
@@ -1024,12 +1903,13 @@ const s = StyleSheet.create({
 
 
 ================================================
-📄 ARCHIVO: app\(auth)\login.tsx
+📄 ARCHIVO: app\(auth)\forgot-password.tsx
 ================================================
 
-import { useAuth } from "@features/auth/presentation/hooks/useAuth";
-import { Link } from "expo-router";
-import { useState } from "react";
+import { useAuth } from '@features/auth/presentation/hooks/useAuth';
+import { E } from '@/constants/theme';
+import { Link } from 'expo-router';
+import { useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -1040,26 +1920,206 @@ import {
   TextInput,
   TouchableOpacity,
   View,
-} from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-const E = {
-  bg:        '#080810',
-  bg2:       '#0d0d1a',
-  card:      '#10101e',
-  violet:    '#7c3aed',
-  violetDk:  '#5b21b6',
-  violetDim: 'rgba(124,58,237,0.12)',
-  violetGlw: 'rgba(124,58,237,0.4)',
-  neon:      '#a855f7',
-  neonSoft:  '#c084fc',
-  cyan:      '#22d3ee',
-  text:      '#e2e8f0',
-  textDim:   '#94a3b8',
-  textMute:  '#475569',
-  border:    'rgba(124,58,237,0.22)',
-  borderAct: 'rgba(124,58,237,0.7)',
-};
+export default function ForgotPasswordScreen() {
+  const [email, setEmail]     = useState('');
+  const [sent, setSent]       = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError]     = useState<string | null>(null);
+  const { resetPassword }     = useAuth();
+  const insets                = useSafeAreaInsets();
+
+  const handleReset = async () => {
+    if (!email) return;
+    setLoading(true);
+    setError(null);
+    try {
+      await resetPassword(email);
+      setSent(true);
+    } catch (e: any) {
+      setError(e.message ?? 'Error al enviar el correo');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <KeyboardAvoidingView
+      style={s.root}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <ScrollView
+        contentContainerStyle={[s.scroll, { paddingBottom: insets.bottom + 24 }]}
+        keyboardShouldPersistTaps="handled"
+      >
+        {/* Logo */}
+        <View style={s.logoWrap}>
+          <View style={s.logoIcon}>
+            <Text style={s.logoEmoji}>🐾</Text>
+          </View>
+          <View>
+            <Text style={s.logoText}>Pet<Text style={s.logoAccent}>Adopt</Text></Text>
+            <Text style={s.logoTag}>ADOPTA UN AMIGO HOY</Text>
+          </View>
+        </View>
+
+        <View style={s.card}>
+          <View style={s.cardTopLine} />
+
+          {!sent ? (
+            <>
+              <Text style={s.title}>Recuperar contraseña</Text>
+              <Text style={s.subtitle}>
+                Ingresa tu email y te enviaremos un enlace para restablecer tu contraseña.
+              </Text>
+
+              {error && (
+                <View style={s.errorBox}>
+                  <Text style={s.errorText}>⚠ {error}</Text>
+                </View>
+              )}
+
+              <View style={s.fieldWrap}>
+                <Text style={s.fieldLabel}>EMAIL</Text>
+                <View style={s.inputWrap}>
+                  <Text style={s.inputIcon}>✉</Text>
+                  <TextInput
+                    style={s.input}
+                    value={email}
+                    onChangeText={setEmail}
+                    placeholder="tu@email.com"
+                    placeholderTextColor={E.textMute}
+                    autoCapitalize="none"
+                    keyboardType="email-address"
+                  />
+                </View>
+              </View>
+
+              <TouchableOpacity
+                style={[s.btnPrimary, loading && s.btnDisabled]}
+                onPress={handleReset}
+                disabled={loading}
+                activeOpacity={0.85}
+              >
+                {loading
+                  ? <ActivityIndicator color="#fff" />
+                  : <Text style={s.btnPrimaryText}>Enviar enlace →</Text>
+                }
+              </TouchableOpacity>
+            </>
+          ) : (
+            // Estado: email enviado
+            <View style={s.successWrap}>
+              <Text style={s.successIcon}>📬</Text>
+              <Text style={s.successTitle}>¡Correo enviado!</Text>
+              <Text style={s.successText}>
+                Revisa tu bandeja de entrada en{' '}
+                <Text style={{ fontWeight: '700' }}>{email}</Text>{' '}
+                y sigue las instrucciones para restablecer tu contraseña.
+              </Text>
+            </View>
+          )}
+
+          <View style={s.footerRow}>
+            <Link href="/(auth)/login">
+              <Text style={s.footerLink}>← Volver al inicio de sesión</Text>
+            </Link>
+          </View>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
+  );
+}
+
+const s = StyleSheet.create({
+  root:   { flex: 1, backgroundColor: E.bg },
+  scroll: { flexGrow: 1, paddingHorizontal: 24, paddingVertical: 48, justifyContent: 'center' },
+
+  logoWrap: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 32 },
+  logoIcon: {
+    width: 52, height: 52, backgroundColor: E.primary, borderRadius: 16,
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: E.primary, shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4, shadowRadius: 12, elevation: 8,
+  },
+  logoEmoji:  { fontSize: 26 },
+  logoText:   { fontSize: 22, fontWeight: '800', color: E.text, letterSpacing: -0.5 },
+  logoAccent: { color: E.primary },
+  logoTag:    { fontSize: 9, color: E.textMute, letterSpacing: 2.5, marginTop: 2 },
+
+  card: {
+    backgroundColor: E.card, borderRadius: E.radius.xl,
+    borderWidth: 1, borderColor: E.border, padding: 24,
+    shadowColor: E.primary, shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08, shadowRadius: 20, elevation: 4,
+  },
+  cardTopLine: {
+    position: 'absolute', top: 0, left: 40, right: 40,
+    height: 3, backgroundColor: E.primary,
+    borderBottomLeftRadius: 4, borderBottomRightRadius: 4,
+  },
+
+  title:    { fontSize: 22, fontWeight: '800', color: E.text, marginBottom: 8 },
+  subtitle: { fontSize: 13, color: E.textDim, lineHeight: 20, marginBottom: 20 },
+
+  errorBox: {
+    backgroundColor: 'rgba(239,68,68,0.08)',
+    borderRadius: E.radius.sm, padding: 12, marginBottom: 16,
+    borderLeftWidth: 3, borderLeftColor: E.danger,
+  },
+  errorText: { color: E.danger, fontSize: 13 },
+
+  fieldWrap:  { marginBottom: 16 },
+  fieldLabel: { fontSize: 11, color: E.textDim, letterSpacing: 1.5, fontWeight: '600', marginBottom: 8 },
+  inputWrap: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: E.bg2, borderRadius: E.radius.md,
+    borderWidth: 1.5, borderColor: E.border,
+    paddingHorizontal: 14, paddingVertical: 13,
+  },
+  inputIcon: { fontSize: 16 },
+  input:     { flex: 1, fontSize: 14, color: E.text },
+
+  btnPrimary: {
+    backgroundColor: E.primary, borderRadius: E.radius.md,
+    paddingVertical: 16, alignItems: 'center', marginBottom: 16,
+    shadowColor: E.primary, shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4, shadowRadius: 12, elevation: 6,
+  },
+  btnDisabled:    { opacity: 0.5 },
+  btnPrimaryText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+
+  successWrap:  { alignItems: 'center', paddingVertical: 20 },
+  successIcon:  { fontSize: 52, marginBottom: 16 },
+  successTitle: { fontSize: 20, fontWeight: '800', color: E.text, marginBottom: 10 },
+  successText:  { fontSize: 13, color: E.textDim, textAlign: 'center', lineHeight: 20 },
+
+  footerRow:  { alignItems: 'center', marginTop: 8 },
+  footerLink: { fontSize: 13, color: E.primary, fontWeight: '600' },
+});
+
+================================================
+📄 ARCHIVO: app\(auth)\login.tsx
+================================================
+
+import { useAuth } from '@features/auth/presentation/hooks/useAuth';
+import { E } from '@/constants/theme';
+import { Link } from 'expo-router';
+import { useState } from 'react';
+import {
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function LoginScreen() {
   const [email, setEmail]       = useState('');
@@ -1078,29 +2138,30 @@ export default function LoginScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-
-        {/* ── Logo ── */}
+        {/* Logo */}
         <View style={s.logoWrap}>
           <View style={s.logoIcon}>
-            <Text style={s.logoIconText}>◈</Text>
+            <Text style={s.logoEmoji}>🐾</Text>
           </View>
           <View>
-            <Text style={s.logoText}>ENIGMA<Text style={s.logoDot}>.</Text></Text>
-            <Text style={s.logoTag}>ENCRYPTED MESSAGING</Text>
+            <Text style={s.logoText}>
+              Pet<Text style={s.logoAccent}>Adopt</Text>
+            </Text>
+            <Text style={s.logoTag}>ADOPTA UN AMIGO HOY</Text>
           </View>
         </View>
 
-        {/* ── Hero ── */}
+        {/* Hero */}
         <View style={s.hero}>
-          <Text style={s.eyebrow}>// ACCESO SEGURO</Text>
-          <Text style={s.titleLight}>Bienvenido</Text>
-          <Text style={s.titleDark}>de <Text style={s.accent}>vuelta.</Text></Text>
-          <Text style={s.subtitle}>Autenticación cifrada de extremo a extremo</Text>
+          <Text style={s.eyebrow}>BIENVENIDO DE VUELTA</Text>
+          <Text style={s.title}>Inicia <Text style={s.titleAccent}>sesión</Text></Text>
+          <Text style={s.subtitle}>
+            Conecta con refugios y encuentra tu compañero ideal
+          </Text>
         </View>
 
-        {/* ── Card ── */}
+        {/* Card */}
         <View style={s.card}>
-          {/* top glow line */}
           <View style={s.cardTopLine} />
 
           {error && (
@@ -1111,9 +2172,9 @@ export default function LoginScreen() {
 
           {/* Email */}
           <View style={s.fieldWrap}>
-            <Text style={s.fieldLabel}>&gt; EMAIL</Text>
+            <Text style={s.fieldLabel}>EMAIL</Text>
             <View style={[s.inputWrap, focused === 'email' && s.inputFocused]}>
-              <Text style={s.inputIcon}>@</Text>
+              <Text style={s.inputIcon}>✉</Text>
               <TextInput
                 style={s.input}
                 value={email}
@@ -1130,9 +2191,9 @@ export default function LoginScreen() {
 
           {/* Password */}
           <View style={s.fieldWrap}>
-            <Text style={s.fieldLabel}>&gt; CONTRASEÑA</Text>
+            <Text style={s.fieldLabel}>CONTRASEÑA</Text>
             <View style={[s.inputWrap, focused === 'password' && s.inputFocused]}>
-              <Text style={s.inputIcon}>▣</Text>
+              <Text style={s.inputIcon}>🔒</Text>
               <TextInput
                 style={s.input}
                 value={password}
@@ -1146,35 +2207,40 @@ export default function LoginScreen() {
             </View>
           </View>
 
+          {/* Forgot password */}
+          <TouchableOpacity style={s.forgotWrap}>
+            <Link href={'/(auth)/forgot-password' as any}>
+              <Text style={s.forgotText}>¿Olvidaste tu contraseña?</Text>
+            </Link>
+          </TouchableOpacity>
+
           {/* Divider */}
           <View style={s.divider}>
             <View style={s.dividerLine} />
-            <Text style={s.dividerText}>EXEC</Text>
+            <Text style={s.dividerText}>o</Text>
             <View style={s.dividerLine} />
           </View>
 
-          {/* Primary button */}
+          {/* Botón principal */}
           <TouchableOpacity
             style={[s.btnPrimary, isLoading && s.btnDisabled]}
             onPress={() => login({ email, password })}
             disabled={isLoading}
             activeOpacity={0.85}
           >
-            {isLoading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={s.btnPrimaryText}>INICIAR SESIÓN  →</Text>
-            )}
+            {isLoading
+              ? <ActivityIndicator color="#fff" />
+              : <Text style={s.btnPrimaryText}>Iniciar sesión →</Text>
+            }
           </TouchableOpacity>
 
-          {/* Ghost button */}
-          <TouchableOpacity style={s.btnGhost} activeOpacity={0.7}>
+          {/* Ir a registro */}
+          <View style={s.footerRow}>
+            <Text style={s.footerText}>¿No tienes cuenta? </Text>
             <Link href="/(auth)/register">
-              <Text style={s.btnGhostText}>
-                SIN CUENTA — <Text style={s.btnGhostAccent}>REGISTRARSE</Text>
-              </Text>
+              <Text style={s.footerLink}>Regístrate</Text>
             </Link>
-          </TouchableOpacity>
+          </View>
         </View>
 
       </ScrollView>
@@ -1186,105 +2252,104 @@ const s = StyleSheet.create({
   root:   { flex: 1, backgroundColor: E.bg },
   scroll: { flexGrow: 1, paddingHorizontal: 24, paddingVertical: 48, justifyContent: 'center' },
 
-  logoWrap: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 44 },
+  // Logo
+  logoWrap: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 40 },
   logoIcon: {
-    width: 40, height: 40,
-    backgroundColor: E.violet,
-    borderRadius: 12,
+    width: 52, height: 52,
+    backgroundColor: E.primary, borderRadius: 16,
     alignItems: 'center', justifyContent: 'center',
-    shadowColor: E.violet, shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8, shadowRadius: 16, elevation: 8,
+    shadowColor: E.primary, shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4, shadowRadius: 12, elevation: 8,
   },
-  logoIconText: { fontSize: 18, color: '#fff' },
-  logoText:  { fontSize: 20, fontWeight: '800', color: '#fff', letterSpacing: -0.5 },
-  logoDot:   { color: E.neon },
-  logoTag:   { fontSize: 8, color: E.textMute, letterSpacing: 3, marginTop: 1 },
+  logoEmoji: { fontSize: 26 },
+  logoText:  { fontSize: 22, fontWeight: '800', color: E.text, letterSpacing: -0.5 },
+  logoAccent:{ color: E.primary },
+  logoTag:   { fontSize: 9, color: E.textMute, letterSpacing: 2.5, marginTop: 2 },
 
-  hero:      { marginBottom: 28 },
-  eyebrow:   { fontSize: 10, color: E.violet, letterSpacing: 2, marginBottom: 10 },
-  titleLight:{ fontSize: 40, fontWeight: '400', color: E.textMute, letterSpacing: -1.5, lineHeight: 44 },
-  titleDark: { fontSize: 40, fontWeight: '800', color: '#fff', letterSpacing: -1.5, lineHeight: 44, marginTop: -4 },
-  accent:    { color: E.neon },
-  subtitle:  { fontSize: 11, color: E.textMute, marginTop: 10, letterSpacing: 0.3, lineHeight: 18 },
+  // Hero
+  hero:     { marginBottom: 28 },
+  eyebrow:  { fontSize: 10, color: E.primary, letterSpacing: 2.5, marginBottom: 8, fontWeight: '600' },
+  title:    { fontSize: 36, fontWeight: '800', color: E.text, letterSpacing: -1, lineHeight: 42 },
+  titleAccent: { color: E.primary },
+  subtitle: { fontSize: 13, color: E.textDim, marginTop: 8, lineHeight: 20 },
 
+  // Card
   card: {
     backgroundColor: E.card,
-    borderRadius: 24,
+    borderRadius: E.radius.xl,
     borderWidth: 1, borderColor: E.border,
     padding: 24,
-    overflow: 'hidden',
+    shadowColor: E.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08, shadowRadius: 20, elevation: 4,
   },
   cardTopLine: {
-    position: 'absolute', top: 0, left: 40, right: 40, height: 1,
-    backgroundColor: E.neon, opacity: 0.4,
+    position: 'absolute', top: 0, left: 40, right: 40,
+    height: 3, backgroundColor: E.primary,
+    borderBottomLeftRadius: 4, borderBottomRightRadius: 4,
   },
 
+  // Error
   errorBox: {
-    backgroundColor: 'rgba(239,68,68,0.1)',
-    borderRadius: 10, padding: 12, marginBottom: 16,
-    borderLeftWidth: 2, borderLeftColor: '#ef4444',
+    backgroundColor: 'rgba(239,68,68,0.08)',
+    borderRadius: E.radius.sm, padding: 12, marginBottom: 16,
+    borderLeftWidth: 3, borderLeftColor: E.danger,
   },
-  errorText: { color: '#f87171', fontSize: 12, letterSpacing: 0.3 },
+  errorText: { color: E.danger, fontSize: 13 },
 
-  fieldWrap: { marginBottom: 16 },
-  fieldLabel:{ fontSize: 9, color: E.violet, letterSpacing: 3, marginBottom: 8 },
-
+  // Fields
+  fieldWrap:  { marginBottom: 16 },
+  fieldLabel: {
+    fontSize: 11, color: E.textDim, letterSpacing: 1.5,
+    fontWeight: '600', marginBottom: 8,
+  },
   inputWrap: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: 'rgba(255,255,255,0.03)',
-    borderRadius: 12, borderWidth: 1, borderColor: E.border,
+    backgroundColor: E.bg2,
+    borderRadius: E.radius.md, borderWidth: 1.5, borderColor: E.border,
     paddingHorizontal: 14, paddingVertical: 13,
   },
   inputFocused: {
-    borderColor: E.violet,
-    ...Platform.select({
-      ios: {
-        shadowColor: E.violet,
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.4,
-        shadowRadius: 12,
-      },
-      android: {
-        // Evitamos sombras/elevaciones dinámicas en Android para prevenir reflow de layout
-      },
-    }),
+    borderColor: E.primary,
+    backgroundColor: E.primaryDim,
   },
-  inputIcon: { fontSize: 14, color: E.textMute },
-  input: { flex: 1, fontSize: 13, color: E.text, fontFamily: Platform.OS === 'ios' ? 'Menlo' : undefined },
+  inputIcon: { fontSize: 16 },
+  input: { flex: 1, fontSize: 14, color: E.text },
 
-  divider: { flexDirection: 'row', alignItems: 'center', gap: 10, marginVertical: 16 },
+  // Forgot
+  forgotWrap: { alignItems: 'flex-end', marginTop: -4, marginBottom: 16 },
+  forgotText: { fontSize: 12, color: E.primary, fontWeight: '600' },
+
+  // Divider
+  divider:     { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 },
   dividerLine: { flex: 1, height: 1, backgroundColor: E.border },
-  dividerText: { fontSize: 9, color: E.textMute, letterSpacing: 2 },
+  dividerText: { fontSize: 12, color: E.textMute },
 
+  // Botones
   btnPrimary: {
-    backgroundColor: E.violet,
-    borderRadius: 14, paddingVertical: 16,
-    alignItems: 'center', marginBottom: 12,
-    shadowColor: E.violet, shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.6, shadowRadius: 20, elevation: 8,
+    backgroundColor: E.primary,
+    borderRadius: E.radius.md, paddingVertical: 16,
+    alignItems: 'center', marginBottom: 16,
+    shadowColor: E.primary, shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4, shadowRadius: 12, elevation: 6,
   },
-  btnDisabled:     { opacity: 0.5 },
-  btnPrimaryText:  { color: '#fff', fontSize: 12, letterSpacing: 2, fontWeight: '600' },
+  btnDisabled:    { opacity: 0.5 },
+  btnPrimaryText: { color: '#fff', fontSize: 15, fontWeight: '700', letterSpacing: 0.3 },
 
-  btnGhost: {
-    borderRadius: 14, paddingVertical: 14,
-    alignItems: 'center',
-    borderWidth: 1, borderColor: E.border,
-  },
-  btnGhostText:   { fontSize: 11, color: E.textMute, letterSpacing: 1 },
-  btnGhostAccent: { color: E.neonSoft },
-
-  footer: { textAlign: 'center', marginTop: 32, fontSize: 9, color: E.textMute, letterSpacing: 3 },
+  // Footer
+  footerRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
+  footerText: { fontSize: 13, color: E.textDim },
+  footerLink: { fontSize: 13, color: E.primary, fontWeight: '700' },
 });
-
 
 ================================================
 📄 ARCHIVO: app\(auth)\register.tsx
 ================================================
 
-import { useAuth } from "@features/auth/presentation/hooks/useAuth";
-import { Link } from "expo-router";
-import { useState } from "react";
+import { useAuth } from '@features/auth/presentation/hooks/useAuth';
+import { E } from '@/constants/theme';
+import { Link } from 'expo-router';
+import { useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -1295,26 +2360,33 @@ import {
   TextInput,
   TouchableOpacity,
   View,
-} from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-
-const E = {
-  bg: '#080810', bg2: '#0d0d1a', card: '#10101e',
-  violet: '#7c3aed', violetDk: '#5b21b6',
-  violetDim: 'rgba(124,58,237,0.12)', violetGlw: 'rgba(124,58,237,0.4)',
-  neon: '#a855f7', neonSoft: '#c084fc', cyan: '#22d3ee',
-  text: '#e2e8f0', textDim: '#94a3b8', textMute: '#475569',
-  border: 'rgba(124,58,237,0.22)', borderAct: 'rgba(124,58,237,0.7)',
-};
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { UserRole } from '@features/auth/domain/entities/User';
 
 export default function RegisterScreen() {
-  const [email, setEmail]       = useState('');
-  const [password, setPassword] = useState('');
-  const [username, setUsername] = useState('');
-  const [role, setRole]         = useState<'vendedor' | 'cliente'>('cliente');
-  const [focused, setFocused]   = useState<string | null>(null);
+  const [step, setStep]           = useState<1 | 2>(1);
+  const [email, setEmail]         = useState('');
+  const [password, setPassword]   = useState('');
+  const [confirm, setConfirm]     = useState('');
+  const [username, setUsername]   = useState('');
+  const [role, setRole]           = useState<UserRole>('adoptante');
+  const [shelterName, setShelterName]       = useState('');
+  const [shelterAddress, setShelterAddress] = useState('');
+  const [shelterPhone, setShelterPhone]     = useState('');
+  const [focused, setFocused]     = useState<string | null>(null);
   const { register, isLoading, error } = useAuth();
   const insets = useSafeAreaInsets();
+
+  const handleRegister = () => {
+    if (password !== confirm) return;
+    const extra = role === 'refugio' ? {
+      shelter_name:    shelterName,
+      shelter_address: shelterAddress,
+      shelter_phone:   shelterPhone,
+    } : undefined;
+    register({ email, password, username, role, extra });
+  };
 
   return (
     <KeyboardAvoidingView
@@ -1326,28 +2398,40 @@ export default function RegisterScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/* ── Logo ── */}
+        {/* Logo */}
         <View style={s.logoWrap}>
           <View style={s.logoIcon}>
-            <Text style={s.logoIconText}>◈</Text>
+            <Text style={s.logoEmoji}>🐾</Text>
           </View>
           <View>
-            <Text style={s.logoText}>ENIGMA<Text style={s.logoDot}>.</Text></Text>
-            <Text style={s.logoTag}>ENCRYPTED MESSAGING</Text>
+            <Text style={s.logoText}>
+              Pet<Text style={s.logoAccent}>Adopt</Text>
+            </Text>
+            <Text style={s.logoTag}>ADOPTA UN AMIGO HOY</Text>
           </View>
         </View>
 
-        {/* ── Hero ── */}
+        {/* Hero */}
         <View style={s.hero}>
-          <Text style={s.eyebrow}>// NUEVA IDENTIDAD</Text>
-          <Text style={s.titleLight}>Únete a</Text>
-          <Text style={s.titleDark}><Text style={s.accent}>Enigma.</Text></Text>
-          <Text style={s.subtitle}>Tu alias, tus reglas, tu privacidad</Text>
+          <Text style={s.eyebrow}>CREAR CUENTA</Text>
+          <Text style={s.title}>Únete a <Text style={s.titleAccent}>PetAdopt</Text></Text>
+          <Text style={s.subtitle}>
+            {step === 1
+              ? 'Elige cómo quieres participar'
+              : 'Completa tus datos para continuar'}
+          </Text>
         </View>
 
-        {/* ── Card ── */}
+        {/* Indicador de pasos */}
+        <View style={s.stepsRow}>
+          <View style={[s.stepDot, step >= 1 && s.stepDotActive]} />
+          <View style={s.stepLine} />
+          <View style={[s.stepDot, step >= 2 && s.stepDotActive]} />
+        </View>
+
+        {/* Card */}
         <View style={s.card}>
-          <View style={[s.cardTopLine, { backgroundColor: E.cyan }]} />
+          <View style={s.cardTopLine} />
 
           {error && (
             <View style={s.errorBox}>
@@ -1355,135 +2439,230 @@ export default function RegisterScreen() {
             </View>
           )}
 
-          {/* Alias */}
-          <View style={s.fieldWrap}>
-            <Text style={s.fieldLabel}>&gt; ALIAS</Text>
-            <View style={[s.inputWrap, focused === 'username' && s.inputFocused]}>
-              <Text style={s.inputIcon}>◈</Text>
-              <TextInput
-                style={s.input}
-                value={username}
-                onChangeText={setUsername}
-                placeholder="sin espacios"
-                placeholderTextColor={E.textMute}
-                autoCapitalize="none"
-                onFocus={() => setFocused('username')}
-                onBlur={() => setFocused(null)}
-              />
-            </View>
-          </View>
+          {/* ── PASO 1: Elegir rol ── */}
+          {step === 1 && (
+            <>
+              <Text style={s.sectionTitle}>¿Cómo quieres participar?</Text>
 
-          {/* Email */}
-          <View style={s.fieldWrap}>
-            <Text style={s.fieldLabel}>&gt; EMAIL</Text>
-            <View style={[s.inputWrap, focused === 'email' && s.inputFocused]}>
-              <Text style={s.inputIcon}>@</Text>
-              <TextInput
-                style={s.input}
-                value={email}
-                onChangeText={setEmail}
-                placeholder="correo@dominio.com"
-                placeholderTextColor={E.textMute}
-                autoCapitalize="none"
-                keyboardType="email-address"
-                onFocus={() => setFocused('email')}
-                onBlur={() => setFocused(null)}
-              />
-            </View>
-          </View>
+              <View style={s.roleRow}>
+                {/* Adoptante */}
+                <TouchableOpacity
+                  style={[s.roleCard, role === 'adoptante' && s.roleCardActive]}
+                  onPress={() => setRole('adoptante')}
+                  activeOpacity={0.8}
+                >
+                  <Text style={s.roleEmoji}>🏠</Text>
+                  <Text style={[s.roleTitle, role === 'adoptante' && s.roleTitleActive]}>
+                    Adoptante
+                  </Text>
+                  <Text style={s.roleDesc}>Busca y adopta mascotas</Text>
+                  {role === 'adoptante' && (
+                    <View style={s.roleCheck}><Text style={s.roleCheckText}>✓</Text></View>
+                  )}
+                </TouchableOpacity>
 
-          {/* Password */}
-          <View style={s.fieldWrap}>
-            <Text style={s.fieldLabel}>&gt; CONTRASEÑA</Text>
-            <View style={[s.inputWrap, focused === 'password' && s.inputFocused]}>
-              <Text style={s.inputIcon}>▣</Text>
-              <TextInput
-                style={s.input}
-                value={password}
-                onChangeText={setPassword}
-                placeholder="mín. 6 caracteres"
-                placeholderTextColor={E.textMute}
-                secureTextEntry
-                onFocus={() => setFocused('password')}
-                onBlur={() => setFocused(null)}
-              />
-            </View>
-          </View>
-
-          {/* Rol */}
-          <View style={s.fieldWrap}>
-            <Text style={s.fieldLabel}>&gt; ROL</Text>
-            <View style={s.roleRow}>
+                {/* Refugio */}
+                <TouchableOpacity
+                  style={[s.roleCard, role === 'refugio' && s.roleCardActiveRefugio]}
+                  onPress={() => setRole('refugio')}
+                  activeOpacity={0.8}
+                >
+                  <Text style={s.roleEmoji}>🏥</Text>
+                  <Text style={[s.roleTitle, role === 'refugio' && s.roleTitleActive]}>
+                    Refugio
+                  </Text>
+                  <Text style={s.roleDesc}>Publica mascotas en adopción</Text>
+                  {role === 'refugio' && (
+                    <View style={[s.roleCheck, s.roleCheckRefugio]}>
+                      <Text style={s.roleCheckText}>✓</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              </View>
 
               <TouchableOpacity
-                style={[
-                  s.roleBtn,
-                  role === 'cliente' && s.roleBtnActive,
-                  role === 'cliente' && s.roleBtnActiveCliente,
-                ]}
-                onPress={() => setRole('cliente')}
-                activeOpacity={0.8}
+                style={s.btnPrimary}
+                onPress={() => setStep(2)}
+                activeOpacity={0.85}
               >
-                <Text style={s.roleEmoji}>🛒</Text>
-                <Text style={[s.roleBtnLabel, role === 'cliente' && s.roleBtnLabelActive]}>
-                  CLIENTE
-                </Text>
-                <Text style={[s.roleBtnSub, role === 'cliente' && s.roleBtnSubActive]}>
-                  Consulta productos
-                </Text>
-                {role === 'cliente' && <View style={s.roleCheck}><Text style={s.roleCheckText}>✓</Text></View>}
+                <Text style={s.btnPrimaryText}>Continuar →</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[
-                  s.roleBtn,
-                  role === 'vendedor' && s.roleBtnActive,
-                  role === 'vendedor' && s.roleBtnActiveVendedor,
-                ]}
-                onPress={() => setRole('vendedor')}
-                activeOpacity={0.8}
-              >
-                <Text style={s.roleEmoji}>🏪</Text>
-                <Text style={[s.roleBtnLabel, role === 'vendedor' && s.roleBtnLabelActive]}>
-                  VENDEDOR
-                </Text>
-                <Text style={[s.roleBtnSub, role === 'vendedor' && s.roleBtnSubActive]}>
-                  Gestiona y responde
-                </Text>
-                {role === 'vendedor' && <View style={s.roleCheck}><Text style={s.roleCheckText}>✓</Text></View>}
-              </TouchableOpacity>
+              <View style={s.footerRow}>
+                <Text style={s.footerText}>¿Ya tienes cuenta? </Text>
+                <Link href="/(auth)/login">
+                  <Text style={s.footerLink}>Inicia sesión</Text>
+                </Link>
+              </View>
+            </>
+          )}
 
-            </View>
-          </View>
+          {/* ── PASO 2: Datos del usuario ── */}
+          {step === 2 && (
+            <>
+              {/* Username */}
+              <View style={s.fieldWrap}>
+                <Text style={s.fieldLabel}>NOMBRE DE USUARIO</Text>
+                <View style={[s.inputWrap, focused === 'username' && s.inputFocused]}>
+                  <Text style={s.inputIcon}>👤</Text>
+                  <TextInput
+                    style={s.input}
+                    value={username}
+                    onChangeText={setUsername}
+                    placeholder="Sin espacios"
+                    placeholderTextColor={E.textMute}
+                    autoCapitalize="none"
+                    onFocus={() => setFocused('username')}
+                    onBlur={() => setFocused(null)}
+                  />
+                </View>
+              </View>
 
-          {/* Divider */}
-          <View style={s.divider}>
-            <View style={s.dividerLine} />
-            <Text style={s.dividerText}>EXEC</Text>
-            <View style={s.dividerLine} />
-          </View>
+              {/* Email */}
+              <View style={s.fieldWrap}>
+                <Text style={s.fieldLabel}>EMAIL</Text>
+                <View style={[s.inputWrap, focused === 'email' && s.inputFocused]}>
+                  <Text style={s.inputIcon}>✉</Text>
+                  <TextInput
+                    style={s.input}
+                    value={email}
+                    onChangeText={setEmail}
+                    placeholder="correo@ejemplo.com"
+                    placeholderTextColor={E.textMute}
+                    autoCapitalize="none"
+                    keyboardType="email-address"
+                    onFocus={() => setFocused('email')}
+                    onBlur={() => setFocused(null)}
+                  />
+                </View>
+              </View>
 
-          <TouchableOpacity
-            style={[s.btnPrimary, isLoading && s.btnDisabled]}
-            onPress={() => register({ email, password, username, role })}
-            disabled={isLoading}
-            activeOpacity={0.85}
-          >
-            {isLoading
-              ? <ActivityIndicator color="#fff" />
-              : <Text style={s.btnPrimaryText}>CREAR CUENTA  →</Text>
-            }
-          </TouchableOpacity>
+              {/* Password */}
+              <View style={s.fieldWrap}>
+                <Text style={s.fieldLabel}>CONTRASEÑA</Text>
+                <View style={[s.inputWrap, focused === 'password' && s.inputFocused]}>
+                  <Text style={s.inputIcon}>🔒</Text>
+                  <TextInput
+                    style={s.input}
+                    value={password}
+                    onChangeText={setPassword}
+                    placeholder="Mínimo 6 caracteres"
+                    placeholderTextColor={E.textMute}
+                    secureTextEntry
+                    onFocus={() => setFocused('password')}
+                    onBlur={() => setFocused(null)}
+                  />
+                </View>
+              </View>
 
-          <TouchableOpacity style={s.btnGhost} activeOpacity={0.7}>
-            <Link href="/(auth)/login">
-              <Text style={s.btnGhostText}>
-                YA TENGO CUENTA — <Text style={s.btnGhostAccent}>ENTRAR</Text>
-              </Text>
-            </Link>
-          </TouchableOpacity>
+              {/* Confirmar password */}
+              <View style={s.fieldWrap}>
+                <Text style={s.fieldLabel}>CONFIRMAR CONTRASEÑA</Text>
+                <View style={[
+                  s.inputWrap,
+                  focused === 'confirm' && s.inputFocused,
+                  confirm && password !== confirm && s.inputError,
+                ]}>
+                  <Text style={s.inputIcon}>🔒</Text>
+                  <TextInput
+                    style={s.input}
+                    value={confirm}
+                    onChangeText={setConfirm}
+                    placeholder="Repite la contraseña"
+                    placeholderTextColor={E.textMute}
+                    secureTextEntry
+                    onFocus={() => setFocused('confirm')}
+                    onBlur={() => setFocused(null)}
+                  />
+                </View>
+                {confirm && password !== confirm && (
+                  <Text style={s.fieldError}>Las contraseñas no coinciden</Text>
+                )}
+              </View>
+
+              {/* Campos extra para refugio */}
+              {role === 'refugio' && (
+                <>
+                  <View style={s.refugioBanner}>
+                    <Text style={s.refugioBannerText}>🏥 Datos del refugio</Text>
+                  </View>
+
+                  <View style={s.fieldWrap}>
+                    <Text style={s.fieldLabel}>NOMBRE DEL REFUGIO</Text>
+                    <View style={[s.inputWrap, focused === 'shelterName' && s.inputFocused]}>
+                      <Text style={s.inputIcon}>🏥</Text>
+                      <TextInput
+                        style={s.input}
+                        value={shelterName}
+                        onChangeText={setShelterName}
+                        placeholder="Nombre oficial del refugio"
+                        placeholderTextColor={E.textMute}
+                        onFocus={() => setFocused('shelterName')}
+                        onBlur={() => setFocused(null)}
+                      />
+                    </View>
+                  </View>
+
+                  <View style={s.fieldWrap}>
+                    <Text style={s.fieldLabel}>DIRECCIÓN</Text>
+                    <View style={[s.inputWrap, focused === 'shelterAddress' && s.inputFocused]}>
+                      <Text style={s.inputIcon}>📍</Text>
+                      <TextInput
+                        style={s.input}
+                        value={shelterAddress}
+                        onChangeText={setShelterAddress}
+                        placeholder="Dirección completa"
+                        placeholderTextColor={E.textMute}
+                        onFocus={() => setFocused('shelterAddress')}
+                        onBlur={() => setFocused(null)}
+                      />
+                    </View>
+                  </View>
+
+                  <View style={s.fieldWrap}>
+                    <Text style={s.fieldLabel}>TELÉFONO</Text>
+                    <View style={[s.inputWrap, focused === 'shelterPhone' && s.inputFocused]}>
+                      <Text style={s.inputIcon}>📞</Text>
+                      <TextInput
+                        style={s.input}
+                        value={shelterPhone}
+                        onChangeText={setShelterPhone}
+                        placeholder="Número de contacto"
+                        placeholderTextColor={E.textMute}
+                        keyboardType="phone-pad"
+                        onFocus={() => setFocused('shelterPhone')}
+                        onBlur={() => setFocused(null)}
+                      />
+                    </View>
+                  </View>
+                </>
+              )}
+
+              {/* Botones paso 2 */}
+              <View style={s.btnRow}>
+                <TouchableOpacity
+                  style={s.btnBack}
+                  onPress={() => setStep(1)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={s.btnBackText}>← Volver</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[s.btnPrimary, s.btnPrimaryFlex, isLoading && s.btnDisabled]}
+                  onPress={handleRegister}
+                  disabled={isLoading || password !== confirm}
+                  activeOpacity={0.85}
+                >
+                  {isLoading
+                    ? <ActivityIndicator color="#fff" />
+                    : <Text style={s.btnPrimaryText}>Crear cuenta →</Text>
+                  }
+                </TouchableOpacity>
+              </View>
+            </>
+          )}
         </View>
-
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -1491,169 +2670,129 @@ export default function RegisterScreen() {
 
 const s = StyleSheet.create({
   root:   { flex: 1, backgroundColor: E.bg },
-  scroll: { flexGrow: 1, paddingHorizontal: 24, paddingVertical: 48, justifyContent: 'center' },
+  scroll: { flexGrow: 1, paddingHorizontal: 24, paddingVertical: 40, justifyContent: 'center' },
 
-  logoWrap: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 36 },
+  logoWrap: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 32 },
   logoIcon: {
-    width: 40, height: 40, backgroundColor: E.violet, borderRadius: 12,
+    width: 52, height: 52, backgroundColor: E.primary, borderRadius: 16,
     alignItems: 'center', justifyContent: 'center',
-    shadowColor: E.violet, shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8, shadowRadius: 16, elevation: 8,
+    shadowColor: E.primary, shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4, shadowRadius: 12, elevation: 8,
   },
-  logoIconText: { fontSize: 18, color: '#fff' },
-  logoText:  { fontSize: 20, fontWeight: '800', color: '#fff', letterSpacing: -0.5 },
-  logoDot:   { color: E.neon },
-  logoTag:   { fontSize: 8, color: E.textMute, letterSpacing: 3, marginTop: 1 },
+  logoEmoji:  { fontSize: 26 },
+  logoText:   { fontSize: 22, fontWeight: '800', color: E.text, letterSpacing: -0.5 },
+  logoAccent: { color: E.primary },
+  logoTag:    { fontSize: 9, color: E.textMute, letterSpacing: 2.5, marginTop: 2 },
 
-  hero:       { marginBottom: 24 },
-  eyebrow:    { fontSize: 10, color: E.cyan, letterSpacing: 2, marginBottom: 10 },
-  titleLight: { fontSize: 40, fontWeight: '400', color: E.textMute, letterSpacing: -1.5, lineHeight: 44 },
-  titleDark:  { fontSize: 40, fontWeight: '800', color: '#fff', letterSpacing: -1.5, lineHeight: 44, marginTop: -4 },
-  accent:     { color: E.neon },
-  subtitle:   { fontSize: 11, color: E.textMute, marginTop: 10, letterSpacing: 0.3, lineHeight: 18 },
+  hero:        { marginBottom: 20 },
+  eyebrow:     { fontSize: 10, color: E.primary, letterSpacing: 2.5, marginBottom: 8, fontWeight: '600' },
+  title:       { fontSize: 32, fontWeight: '800', color: E.text, letterSpacing: -1 },
+  titleAccent: { color: E.primary },
+  subtitle:    { fontSize: 13, color: E.textDim, marginTop: 6, lineHeight: 20 },
+
+  // Steps indicator
+  stepsRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 20, paddingHorizontal: 60 },
+  stepDot:  { width: 10, height: 10, borderRadius: 5, backgroundColor: E.border },
+  stepDotActive: { backgroundColor: E.primary },
+  stepLine: { flex: 1, height: 2, backgroundColor: E.border, marginHorizontal: 6 },
 
   card: {
-    backgroundColor: E.card, borderRadius: 24,
-    borderWidth: 1, borderColor: E.border,
-    padding: 24, overflow: 'hidden',
+    backgroundColor: E.card, borderRadius: E.radius.xl,
+    borderWidth: 1, borderColor: E.border, padding: 24,
+    shadowColor: E.primary, shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08, shadowRadius: 20, elevation: 4,
   },
   cardTopLine: {
     position: 'absolute', top: 0, left: 40, right: 40,
-    height: 1, opacity: 0.4,
+    height: 3, backgroundColor: E.primary,
+    borderBottomLeftRadius: 4, borderBottomRightRadius: 4,
   },
 
   errorBox: {
-    backgroundColor: 'rgba(239,68,68,0.1)',
-    borderRadius: 10, padding: 12, marginBottom: 16,
-    borderLeftWidth: 2, borderLeftColor: '#ef4444',
+    backgroundColor: 'rgba(239,68,68,0.08)',
+    borderRadius: E.radius.sm, padding: 12, marginBottom: 16,
+    borderLeftWidth: 3, borderLeftColor: E.danger,
   },
-  errorText: { color: '#f87171', fontSize: 12, letterSpacing: 0.3 },
+  errorText: { color: E.danger, fontSize: 13 },
 
+  sectionTitle: {
+    fontSize: 15, fontWeight: '700', color: E.text,
+    marginBottom: 16, textAlign: 'center',
+  },
+
+  // Role cards
+  roleRow: { flexDirection: 'row', gap: 12, marginBottom: 20 },
+  roleCard: {
+    flex: 1, padding: 16, borderRadius: E.radius.lg,
+    borderWidth: 1.5, borderColor: E.border,
+    backgroundColor: E.bg2, alignItems: 'center', gap: 6,
+  },
+  roleCardActive: {
+    borderColor: E.primary, backgroundColor: E.primaryDim,
+  },
+  roleCardActiveRefugio: {
+    borderColor: E.secondary, backgroundColor: 'rgba(14,165,233,0.08)',
+  },
+  roleEmoji:    { fontSize: 28 },
+  roleTitle:    { fontSize: 13, fontWeight: '700', color: E.textDim, letterSpacing: 0.3 },
+  roleTitleActive: { color: E.text },
+  roleDesc:     { fontSize: 10, color: E.textMute, textAlign: 'center', lineHeight: 14 },
+  roleCheck: {
+    position: 'absolute', top: 8, right: 8,
+    width: 18, height: 18, borderRadius: 9,
+    backgroundColor: E.primary,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  roleCheckRefugio: { backgroundColor: E.secondary },
+  roleCheckText: { color: '#fff', fontSize: 10, fontWeight: '800' },
+
+  // Fields
   fieldWrap:  { marginBottom: 14 },
-  fieldLabel: { fontSize: 9, color: E.violet, letterSpacing: 3, marginBottom: 8 },
-
+  fieldLabel: { fontSize: 11, color: E.textDim, letterSpacing: 1.5, fontWeight: '600', marginBottom: 8 },
   inputWrap: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: 'rgba(255,255,255,0.03)',
-    borderRadius: 12, borderWidth: 1, borderColor: E.border,
+    backgroundColor: E.bg2, borderRadius: E.radius.md,
+    borderWidth: 1.5, borderColor: E.border,
     paddingHorizontal: 14, paddingVertical: 13,
   },
-  inputFocused: {
-    borderColor: E.violet,
-    ...Platform.select({
-      ios: {
-        shadowColor: E.violet,
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.4,
-        shadowRadius: 12,
-      },
-      android: {},
-    }),
-  },
-  inputIcon: { fontSize: 14, color: E.textMute },
-  input: {
-    flex: 1, fontSize: 13, color: E.text,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : undefined,
-  },
+  inputFocused: { borderColor: E.primary, backgroundColor: E.primaryDim },
+  inputError:   { borderColor: E.danger },
+  inputIcon:    { fontSize: 16 },
+  input:        { flex: 1, fontSize: 14, color: E.text },
+  fieldError:   { fontSize: 11, color: E.danger, marginTop: 4 },
 
-  // ── Rol selector ──
-  roleRow: { flexDirection: 'row', gap: 10 },
-
-  roleBtn: {
-    flex: 1,
-    paddingVertical: 16,
-    paddingHorizontal: 12,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: E.border,
-    backgroundColor: 'rgba(255,255,255,0.02)',
-    alignItems: 'center',
-    gap: 4,
-    position: 'relative',
+  // Refugio banner
+  refugioBanner: {
+    backgroundColor: 'rgba(14,165,233,0.08)',
+    borderRadius: E.radius.sm, padding: 10,
+    marginBottom: 14, borderLeftWidth: 3,
+    borderLeftColor: E.secondary,
   },
-  roleBtnActive: {
-    borderWidth: 1.5,
-  },
-  roleBtnActiveCliente: {
-    borderColor: E.violet,
-    backgroundColor: 'rgba(124,58,237,0.10)',
-    ...Platform.select({
-      ios: {
-        shadowColor: E.violet,
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.35,
-        shadowRadius: 12,
-      },
-      android: {},
-    }),
-  },
-  roleBtnActiveVendedor: {
-    borderColor: E.cyan,
-    backgroundColor: 'rgba(34,211,238,0.08)',
-    ...Platform.select({
-      ios: {
-        shadowColor: E.cyan,
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.3,
-        shadowRadius: 12,
-      },
-      android: {},
-    }),
-  },
+  refugioBannerText: { fontSize: 13, color: E.secondary, fontWeight: '600' },
 
-  roleEmoji: { fontSize: 24, marginBottom: 2 },
-
-  roleBtnLabel: {
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 2,
-    color: E.textMute,
-  },
-  roleBtnLabelActive: { color: E.text },
-
-  roleBtnSub: {
-    fontSize: 9,
-    color: E.textMute,
-    letterSpacing: 0.3,
-    textAlign: 'center',
-  },
-  roleBtnSubActive: { color: E.textDim },
-
-  roleCheck: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: E.violet,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  roleCheckText: { color: '#fff', fontSize: 9, fontWeight: '800' },
-
-  // ── Divider ──
-  divider:     { flexDirection: 'row', alignItems: 'center', gap: 10, marginVertical: 14 },
-  dividerLine: { flex: 1, height: 1, backgroundColor: E.border },
-  dividerText: { fontSize: 9, color: E.textMute, letterSpacing: 2 },
-
+  // Botones
+  btnRow:        { flexDirection: 'row', gap: 10, marginTop: 4 },
   btnPrimary: {
-    backgroundColor: E.violet, borderRadius: 14,
-    paddingVertical: 16, alignItems: 'center', marginBottom: 12,
-    shadowColor: E.violet, shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.6, shadowRadius: 20, elevation: 8,
+    backgroundColor: E.primary, borderRadius: E.radius.md,
+    paddingVertical: 16, alignItems: 'center', marginBottom: 16,
+    shadowColor: E.primary, shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4, shadowRadius: 12, elevation: 6,
   },
+  btnPrimaryFlex: { flex: 1, marginBottom: 0 },
   btnDisabled:    { opacity: 0.5 },
-  btnPrimaryText: { color: '#fff', fontSize: 12, letterSpacing: 2, fontWeight: '600' },
-
-  btnGhost: {
-    borderRadius: 14, paddingVertical: 14, alignItems: 'center',
-    borderWidth: 1, borderColor: E.border,
+  btnPrimaryText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  btnBack: {
+    paddingHorizontal: 16, paddingVertical: 16,
+    borderRadius: E.radius.md, borderWidth: 1.5,
+    borderColor: E.border, alignItems: 'center', justifyContent: 'center',
   },
-  btnGhostText:   { fontSize: 11, color: E.textMute, letterSpacing: 1 },
-  btnGhostAccent: { color: E.neonSoft },
-});
+  btnBackText: { fontSize: 13, color: E.textDim, fontWeight: '600' },
 
+  // Footer
+  footerRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: 4 },
+  footerText: { fontSize: 13, color: E.textDim },
+  footerLink: { fontSize: 13, color: E.primary, fontWeight: '700' },
+});
 
 ================================================
 📄 ARCHIVO: app\(auth)\_layout.tsx
@@ -1667,61 +2806,110 @@ export default function AuthLayout() {
 
 
 ================================================
+📄 ARCHIVO: app\(shelter)\_layout.tsx
+================================================
+
+import { HapticTab } from '@/components/haptic-tab';
+import { E } from '@/constants/theme';
+import { Tabs } from 'expo-router';
+import { Platform, StyleSheet, Text, View } from 'react-native';
+
+function TabIcon({ emoji, label, focused }: { emoji: string; label: string; focused: boolean }) {
+  return (
+    <View style={[s.item, focused && s.itemFocused]}>
+      {focused && <View style={s.pill} />}
+      <Text style={s.emoji}>{emoji}</Text>
+      <Text style={[s.label, focused && s.labelFocused]}>{label}</Text>
+    </View>
+  );
+}
+
+export default function ShelterLayout() {
+  return (
+    <Tabs
+      screenOptions={{
+        headerShown: false,
+        tabBarButton: HapticTab,
+        tabBarStyle: s.tabBar,
+        tabBarShowLabel: false,
+      }}
+    >
+      <Tabs.Screen name="index"     options={{ tabBarIcon: ({ focused }) => <TabIcon emoji="🏥" label="Mis mascotas" focused={focused} /> }} />
+      <Tabs.Screen name="requests"  options={{ tabBarIcon: ({ focused }) => <TabIcon emoji="📋" label="Solicitudes"  focused={focused} /> }} />
+      <Tabs.Screen name="chat/index" options={{ tabBarIcon: ({ focused }) => <TabIcon emoji="💬" label="Chat"        focused={focused} /> }} />
+      <Tabs.Screen name="pet/new"   options={{ href: null }} />
+      <Tabs.Screen name="pet/[id]"  options={{ href: null }} />
+      <Tabs.Screen name="chat/[roomId]" options={{ href: null }} />
+    </Tabs>
+  );
+}
+
+const s = StyleSheet.create({
+  tabBar: {
+    backgroundColor: E.card, borderTopWidth: 1, borderTopColor: E.border,
+    height: Platform.OS === 'ios' ? 84 : 64,
+    paddingBottom: Platform.OS === 'ios' ? 20 : 8, paddingTop: 8,
+    elevation: 0, shadowOpacity: 0,
+  },
+  item:        { alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 16, gap: 2, minWidth: 60 },
+  itemFocused: { backgroundColor: E.primaryDim },
+  pill:        { position: 'absolute', top: -2, width: 20, height: 3, backgroundColor: E.primary, borderRadius: 2 },
+  emoji:       { fontSize: 20 },
+  label:       { fontSize: 9, fontWeight: '600', color: E.textMute, letterSpacing: 0.5 },
+  labelFocused:{ color: E.primary },
+});
+
+================================================
 📄 ARCHIVO: app\_layout.tsx
 ================================================
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Slot, useRouter, useSegments } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { supabase } from '@shared/infrastructure/supabase/client';
 import { useAuthStore } from '@features/auth/presentation/store/authStore';
 import { SupabaseAuthRepository } from '@features/auth/infrastructure/repositories/SupabaseAuthRepository';
-import { requestNotificationPermissions } from '@shared/infrastructure/notifications/NotificationService';
 
 const queryClient = new QueryClient({
-  defaultOptions: { queries: { retry: 1, staleTime: 30_000 } }
+  defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
 });
 const authRepo = new SupabaseAuthRepository();
 
 function AuthGuard() {
   const { user, setUser } = useAuthStore();
-  const segments = useSegments();
-  const router = useRouter();
-  const [isReady, setIsReady] = useState(false); // 👈 clave del fix
+  const segments  = useSegments();
+  const router    = useRouter();
+  const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
     async function restoreSession() {
-      const user = await authRepo.getCurrentUser();
-      setUser(user);
-      setIsReady(true);
-    }
-    restoreSession(); // ✅ función async interna, no async directo en useEffect
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        async function syncUser() {
-          if (session) {
-            const user = await authRepo.getCurrentUser();
-            setUser(user);
-          } else {
-            setUser(null);
-          }
-          setIsReady(true); // 👈 movido aquí: cubre ambos casos (con y sin sesión)
-        }
-        syncUser();
+      try {
+        const user = await authRepo.getCurrentUser();
+        setUser(user);
+      } catch {
+        setUser(null);
+      } finally {
+        setIsReady(true);
       }
-    );
-    requestNotificationPermissions(); 
-    return () => subscription.unsubscribe(); // ✅ cleanup síncrono
-  }, []);
+    }
+    restoreSession();
+  }, [setUser]);
 
   useEffect(() => {
-    if (!isReady) return; // 👈 no navegar hasta estar montado
+    if (!isReady) return;
+    const inAuth    = (segments[0] as string) === '(auth)';
+    const inAdopter = (segments[0] as string) === '(adopter)';
+    const inShelter = (segments[0] as string) === '(shelter)';
 
-    const inAuth = segments[0] === '(auth)';
-    if (!user && !inAuth) router.replace('/(auth)/login');
-    if (user && inAuth) router.replace('/(app)');
-  }, [user, segments, isReady]);
+    if (!user && !inAuth) {
+      router.replace('/(auth)/login' as any);
+    } else if (user && inAuth) {
+      router.replace((user.role === 'refugio' ? '/(shelter)' : '/(adopter)') as any);
+    } else if (user && user.role === 'refugio' && inAdopter) {
+      router.replace('/(shelter)' as any);
+    } else if (user && user.role === 'adoptante' && inShelter) {
+      router.replace('/(adopter)' as any);
+    }
+  }, [user, segments, isReady, router]);
 
   return <Slot />;
 }
@@ -1740,54 +2928,41 @@ export default function RootLayout() {
 
 {
   "expo": {
-    "name": "chat-web-socket",
-    "slug": "chat-web-socket",
+    "name": "PetAdopt",
+    "slug": "petadopt",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "chatwebsocket",
+    "scheme": "petadopt",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
-    "ios": {
-      "supportsTablet": true
-    },
+    "ios": { "supportsTablet": true },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "backgroundColor": "#F97316"
       },
-      "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "edgeToEdgeEnabled": true
     },
-    "web": {
-      "output": "static",
-      "favicon": "./assets/images/favicon.png"
-    },
+    "web": { "output": "static", "favicon": "./assets/images/favicon.png" },
     "plugins": [
       "expo-router",
-      "expo-notifications",
       [
         "expo-splash-screen",
         {
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#ffffff",
-          "dark": {
-            "backgroundColor": "#000000"
-          }
+          "backgroundColor": "#FFF7F0"
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-image-picker",
+      "expo-location"
     ],
-    "experiments": {
-      "typedRoutes": true
-    }
+    "experiments": { "typedRoutes": true }
   }
 }
-
 
 ================================================
 📄 ARCHIVO: CLAUDE.md
@@ -2188,52 +3363,40 @@ export function IconSymbol({
 ================================================
 
 export const E = {
-  // ── Backgrounds
-  bg:        '#080810',
-  bg2:       '#0d0d1a',
-  bg3:       '#12121f',
-  card:      '#10101e',
-  cardHover: '#14142a',
-
-  // ── Brand
-  violet:     '#7c3aed',
-  violetDark: '#5b21b6',
-  violetDim:  'rgba(124,58,237,0.12)',
-  violetGlow: 'rgba(124,58,237,0.35)',
-  neon:       '#a855f7',
-  neonSoft:   '#c084fc',
-  cyan:       '#22d3ee',
-  cyanGlow:   'rgba(34,211,238,0.2)',
-
-  // ── Text
-  text:     '#e2e8f0',
-  textDim:  '#94a3b8',
-  textMute: '#475569',
-
-  // ── Borders
-  border:      'rgba(124,58,237,0.22)',
-  borderHover: 'rgba(124,58,237,0.55)',
-
-  // ── Gradients (use as array for LinearGradient)
-  gradViolet: ['#7c3aed', '#5b21b6'] as const,
-  gradCyan:   ['#0e7490', '#164e63'] as const,
-  gradPink:   ['#be185d', '#831843'] as const,
-  gradGreen:  ['#15803d', '#14532d'] as const,
-
-  // ── Typography
-  mono: 'SpaceMono-Regular',   // use expo's SpaceMono or load Share Tech Mono
-  sans: 'System',
-
-  // ── Spacing
-  radius:   {
-    sm: 10,
-    md: 14,
-    lg: 20,
-    xl: 24,
-    full: 100,
-  },
+  bg:           '#FFF7F0',
+  bg2:          '#FEF3E8',
+  card:         '#FFFFFF',
+  primary:      '#F97316',
+  primaryDark:  '#EA580C',
+  primaryLight: '#FED7AA',
+  primaryDim:   'rgba(249,115,22,0.12)',
+  primaryGlow:  'rgba(249,115,22,0.35)',
+  secondary:    '#0EA5E9',
+  success:      '#22C55E',
+  danger:       '#EF4444',
+  warning:      '#F59E0B',
+  text:         '#1C1C1E',
+  textDim:      '#6B7280',
+  textMute:     '#9CA3AF',
+  border:       'rgba(249,115,22,0.22)',
+  borderHover:  'rgba(249,115,22,0.55)',
+  gradPrimary:  ['#F97316', '#EA580C'] as const,
+  gradBlue:     ['#0EA5E9', '#0284C7'] as const,
+  radius: { sm: 10, md: 14, lg: 20, xl: 24, full: 100 },
 } as const;
 
+export const Colors = {
+  light: {
+    text: '#1C1C1E', background: '#FFF7F0',
+    tint: '#F97316', icon: '#9CA3AF',
+    tabIconDefault: '#9CA3AF', tabIconSelected: '#F97316',
+  },
+  dark: {
+    text: '#ECEDEE', background: '#151718',
+    tint: '#F97316', icon: '#9BA1A6',
+    tabIconDefault: '#9BA1A6', tabIconSelected: '#F97316',
+  },
+};
 
 ================================================
 📄 ARCHIVO: env.d.ts
@@ -2357,6 +3520,7 @@ export function useThemeColor(
     "@tanstack/react-query": "^5.100.13",
     "appwrite": "^25.2.0",
     "base64-arraybuffer": "^1.0.2",
+    "date-fns": "^4.3.0",
     "expo": "~54.0.33",
     "expo-constants": "~18.0.13",
     "expo-file-system": "~19.0.22",
@@ -2365,6 +3529,7 @@ export function useThemeColor(
     "expo-image": "~3.0.11",
     "expo-image-picker": "~17.0.11",
     "expo-linking": "~8.0.11",
+    "expo-location": "~19.0.8",
     "expo-notifications": "~0.32.17",
     "expo-router": "~6.0.23",
     "expo-secure-store": "~15.0.8",
@@ -2381,6 +3546,7 @@ export function useThemeColor(
     "react-native-safe-area-context": "~5.6.0",
     "react-native-screens": "~4.16.0",
     "react-native-web": "~0.21.0",
+    "react-native-webview": "13.15.0",
     "react-native-worklets": "0.5.1",
     "zustand": "^5.0.13"
   },
@@ -2569,6 +3735,71 @@ rl.question(
 
 
 ================================================
+📄 ARCHIVO: src\features\assistant\presentation\hooks\useAssistant.ts
+================================================
+
+import { GeminiMessage, sendGeminiMessage } from '@shared/infrastructure/gemini/client';
+import { useState } from 'react';
+
+export interface ChatMessage {
+  id:        string;
+  role:      'user' | 'bot';
+  text:      string;
+  createdAt: Date;
+}
+
+export function useAssistant() {
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    {
+      id:        'welcome',
+      role:      'bot',
+      text:      '¡Hola! Soy VetBot 🐾 Tu asistente de PetAdopt. ¿En qué puedo ayudarte hoy? Puedo orientarte sobre salud, cuidados y alimentación de mascotas.',
+      createdAt: new Date(),
+    },
+  ]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError]         = useState<string | null>(null);
+
+  const sendMessage = async (text: string) => {
+    if (!text.trim() || isLoading) return;
+
+    const userMsg: ChatMessage = {
+      id: `user-${Date.now()}`, role: 'user', text, createdAt: new Date(),
+    };
+    setMessages((prev) => [...prev, userMsg]);
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const history: GeminiMessage[] = messages
+        .filter((m) => m.id !== 'welcome')
+        .map((m) => ({
+          role:  m.role === 'user' ? 'user' : 'model',
+          parts: [{ text: m.text }],
+        }));
+
+      const response = await sendGeminiMessage(history, text);
+      const botMsg: ChatMessage = {
+        id: `bot-${Date.now()}`, role: 'bot', text: response, createdAt: new Date(),
+      };
+      setMessages((prev) => [...prev, botMsg]);
+    } catch (e: any) {
+      setError(e.message ?? 'Error al contactar el asistente');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const clearChat = () => setMessages([{
+    id: 'welcome', role: 'bot',
+    text: '¡Hola! Soy VetBot 🐾 ¿En qué puedo ayudarte?',
+    createdAt: new Date(),
+  }]);
+
+  return { messages, sendMessage, isLoading, error, clearChat };
+}
+
+================================================
 📄 ARCHIVO: src\features\auth\application\use-cases\LoginUseCase.ts
 ================================================
 
@@ -2594,49 +3825,52 @@ export class LoginUseCase {
 📄 ARCHIVO: src\features\auth\application\use-cases\RegisterUseCase.ts
 ================================================
 
-import { AuthError } from '../../../../shared/domain/errors/AppError';
+import { AuthError } from '@shared/domain/errors/AppError';
 import { User, UserRole } from '../../domain/entities/User';
 import { IAuthRepository } from '../../domain/repositories/IAuthRepository';
 
 export class RegisterUseCase {
-    constructor(private readonly authRepo: IAuthRepository) {}
+  constructor(private readonly authRepo: IAuthRepository) {}
 
-    async execute(
-        email: string,
-        password: string,
-        username: string,
-        role: UserRole,          
-    ): Promise<User> {
-        if (!email || !password || !username)
-            throw new AuthError('Todos los campos son obligatorios');
-        if (password.length < 6)
-            throw new AuthError('La contraseña debe tener al menos 6 caracteres');
-        if (username.includes(' '))
-            throw new AuthError('El alias no puede contener espacios');
-        if (!['vendedor', 'cliente'].includes(role))
-            throw new AuthError('Rol inválido');
-
-        try {
-            return await this.authRepo.register(email, password, username, role);
-        } catch (error) {
-            const message = error instanceof Error ? error.message : 'Error al registrar usuario';
-            throw new AuthError(message);
-        }
+  async execute(
+    email: string,
+    password: string,
+    username: string,
+    role: UserRole,
+    extra?: Record<string, any>
+  ): Promise<User> {
+    if (!email || !password || !username)
+      throw new AuthError('Todos los campos son obligatorios');
+    if (password.length < 6)
+      throw new AuthError('La contraseña debe tener al menos 6 caracteres');
+    if (!['refugio', 'adoptante'].includes(role))
+      throw new AuthError('Rol inválido');
+    try {
+      return await this.authRepo.register(email, password, username, role, extra);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Error al registrar';
+      throw new AuthError(msg);
     }
+  }
 }
 
 ================================================
 📄 ARCHIVO: src\features\auth\domain\entities\User.ts
 ================================================
 
-export type UserRole = 'vendedor' | 'cliente';
+export type UserRole = 'refugio' | 'adoptante';
 
 export interface User {
-    id:        string;
-    email:     string;
-    username:  string;
-    avatarUrl?: string;
-    role:      UserRole;  // ← NUEVO
+  id:             string;
+  email:          string;
+  username:       string;
+  avatarUrl?:     string;
+  role:           UserRole;
+  shelterName?:   string;
+  shelterAddress?:string;
+  shelterPhone?:  string;
+  latitude?:      number;
+  longitude?:     number;
 }
 
 ================================================
@@ -2646,42 +3880,42 @@ export interface User {
 import { User, UserRole } from '../entities/User';
 
 export interface IAuthRepository {
-    login(email: string, password: string): Promise<User>;
-    register(email: string, password: string, username: string, role: UserRole): Promise<User>;
-    logout(): Promise<void>;
-    getCurrentUser(): Promise<User | null>;
+  login(email: string, password: string): Promise<User>;
+  loginWithGoogle(): Promise<User>;
+  register(
+    email: string,
+    password: string,
+    username: string,
+    role: UserRole,
+    extra?: Record<string, any>
+  ): Promise<User>;
+  logout(): Promise<void>;
+  getCurrentUser(): Promise<User | null>;
+  resetPassword(email: string): Promise<void>;
 }
 
 ================================================
 📄 ARCHIVO: src\features\auth\infrastructure\repositories\SupabaseAuthRepository.ts
 ================================================
 
-import { supabase } from "../../../../shared/infrastructure/supabase/client";
-import { User, UserRole } from "../../domain/entities/User";
-import { IAuthRepository } from "../../domain/repositories/IAuthRepository";
+import { supabase } from '@shared/infrastructure/supabase/client';
+import { User, UserRole } from '../../domain/entities/User';
+import { IAuthRepository } from '../../domain/repositories/IAuthRepository';
 
 export class SupabaseAuthRepository implements IAuthRepository {
 
   async login(email: string, password: string): Promise<User> {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error || !data.user) throw new Error(error?.message ?? 'Error al iniciar sesión');
+    return this._fetchProfile(data.user.id, data.user.email!);
+  }
 
-    const { data: profile, error: profileError } = await supabase
-      //mapea datos de Supabase-entidad User del dominio
-    .from('profiles')
-      .select('username, avatar_url, role')
-      .eq('id', data.user.id)
-      .single();
-
-    if (profileError) console.warn('Profile fetch error:', profileError.message);
-
-    return {
-      id:        data.user.id,
-      email:     data.user.email!,
-      username:  profile?.username ?? data.user.user_metadata?.username ?? '',
-      avatarUrl: profile?.avatar_url ?? undefined,
-      role:      (profile?.role ?? 'cliente') as UserRole,
-    };
+  async loginWithGoogle(): Promise<User> {
+    const { error } = await supabase.auth.signInWithOAuth({ provider: 'google' });
+    if (error) throw new Error(error.message);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('No se pudo obtener el usuario');
+    return this._fetchProfile(user.id, user.email!);
   }
 
   async register(
@@ -2689,63 +3923,54 @@ export class SupabaseAuthRepository implements IAuthRepository {
     password: string,
     username: string,
     role: UserRole,
+    extra?: Record<string, any>
   ): Promise<User> {
-    // 1. Crear usuario en Supabase Auth — pasar role Y display_name en metadata
     const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          username,
-          role,                  // ← el trigger lo lee de raw_user_meta_data
-          display_name: username, // ← aparece en Supabase Auth dashboard
-        },
-      },
+      email, password,
+      options: { data: { username, role, display_name: username } },
     });
-
     if (error) throw new Error(error.message);
     if (!data.user) throw new Error('No se pudo crear el usuario');
 
-    // 2. Upsert en profiles por si el trigger ya insertó sin el role correcto
     const { error: profileError } = await supabase
       .from('profiles')
-      .upsert(
-        { id: data.user.id, username, role },
-        { onConflict: 'id' },   // ← si el trigger ya corrió, actualiza el role
-      );
-
+      .upsert({ id: data.user.id, username, role, ...extra }, { onConflict: 'id' });
     if (profileError) throw new Error(profileError.message);
 
-    return {
-      id:       data.user.id,
-      email:    data.user.email!,
-      username,
-      role,
-    };
+    return { id: data.user.id, email: data.user.email!, username, role, ...extra };
   }
 
   async logout(): Promise<void> {
     await supabase.auth.signOut();
   }
 
+  async resetPassword(email: string): Promise<void> {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: 'https://TU_SITIO.vercel.app/reset-password',
+    });
+    if (error) throw new Error(error.message);
+  }
+
   async getCurrentUser(): Promise<User | null> {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return null;
+    return this._fetchProfile(user.id, user.email!);
+  }
 
-    const { data: profile, error } = await supabase
-      .from('profiles')
-      .select('username, avatar_url, role')
-      .eq('id', user.id)
-      .single();
-
-    if (error) console.warn('getCurrentUser profile error:', error.message);
-
+  private async _fetchProfile(userId: string, email: string): Promise<User> {
+    const { data: p } = await supabase
+      .from('profiles').select('*').eq('id', userId).single();
     return {
-      id:        user.id,
-      email:     user.email!,
-      username:  profile?.username ?? user.user_metadata?.username ?? '',
-      avatarUrl: profile?.avatar_url ?? undefined,
-      role:      (profile?.role ?? 'cliente') as UserRole,
+      id:             userId,
+      email,
+      username:       p?.username ?? '',
+      avatarUrl:      p?.avatar_url ?? undefined,
+      role:           (p?.role ?? 'adoptante') as UserRole,
+      shelterName:    p?.shelter_name ?? undefined,
+      shelterAddress: p?.shelter_address ?? undefined,
+      shelterPhone:   p?.shelter_phone ?? undefined,
+      latitude:       p?.latitude ?? undefined,
+      longitude:      p?.longitude ?? undefined,
     };
   }
 }
@@ -2754,18 +3979,21 @@ export class SupabaseAuthRepository implements IAuthRepository {
 📄 ARCHIVO: src\features\auth\presentation\hooks\useAuth.ts
 ================================================
 
-import { useMutation } from "@tanstack/react-query";
-import { useRouter } from "expo-router";
-import { LoginUseCase } from "../../application/use-cases/LoginUseCase";
-import { RegisterUseCase } from "../../application/use-cases/RegisterUseCase";
-import { SupabaseAuthRepository } from "../../infrastructure/repositories/SupabaseAuthRepository";
-import { useAuthStore } from "../store/authStore";
-import { UserRole } from "../../domain/entities/User";
+import { useMutation } from '@tanstack/react-query';
+import { useRouter } from 'expo-router';
+import { LoginUseCase } from '../../application/use-cases/LoginUseCase';
+import { RegisterUseCase } from '../../application/use-cases/RegisterUseCase';
+import { SupabaseAuthRepository } from '../../infrastructure/repositories/SupabaseAuthRepository';
+import { useAuthStore } from '../store/authStore';
+import { UserRole } from '../../domain/entities/User';
 
-type RegisterDto = { email: string; password: string; username: string; role: UserRole };
+type RegisterDto = {
+  email: string; password: string; username: string;
+  role: UserRole; extra?: Record<string, any>;
+};
 
-const authRepo = new SupabaseAuthRepository();
-const loginUseCase = new LoginUseCase(authRepo);
+const authRepo        = new SupabaseAuthRepository();
+const loginUseCase    = new LoginUseCase(authRepo);
 const registerUseCase = new RegisterUseCase(authRepo);
 
 export function useAuth() {
@@ -2774,70 +4002,41 @@ export function useAuth() {
 
   const loginMutation = useMutation({
     mutationFn: ({ email, password }: { email: string; password: string }) =>
-      loginUseCase.execute(email, password), //usa el use case login
+      loginUseCase.execute(email, password),
     onSuccess: (user) => {
       setUser(user);
-      router.replace("/(app)");
+      router.replace((user.role === 'refugio' ? '/(shelter)' : '/(adopter)') as any);
     },
   });
 
   const registerMutation = useMutation({
-    mutationFn: ({ email, password, username, role }: RegisterDto) =>
-      registerUseCase.execute(email, password, username, role),  // ← pasar role
+    mutationFn: ({ email, password, username, role, extra }: RegisterDto) =>
+      registerUseCase.execute(email, password, username, role, extra),
     onSuccess: (user) => {
       setUser(user);
-      router.replace("/(app)");
+      router.replace((user.role === 'refugio' ? '/(shelter)' : '/(adopter)') as any);
     },
   });
 
   const logout = async () => {
     try { await authRepo.logout(); }
-    finally {
-      setUser(null);
-      router.replace("/(auth)/login");
-    }
+    finally { setUser(null); router.replace('/(auth)/login' as any); }
+  };
+
+  const resetPassword = async (email: string) => {
+    await authRepo.resetPassword(email);
   };
 
   return {
     user,
-    login: loginMutation.mutate,
-    register: registerMutation.mutate,
+    login:         loginMutation.mutate,
+    register:      registerMutation.mutate,
     logout,
-    isLoading: loginMutation.isPending || registerMutation.isPending,
-    error: loginMutation.error?.message ?? registerMutation.error?.message ?? null,
+    resetPassword,
+    isLoading:     loginMutation.isPending || registerMutation.isPending,
+    error:         loginMutation.error?.message ?? registerMutation.error?.message ?? null,
   };
 }
-
-
-
-//Single Responsibility (una única funcion )
-// Login
-//Supabase 
-//Auth
-//SendMessage
-
-
-
-//OPEN/CLOSED
-
-//Modificacion de base de datos
-
-//L-Liskov Substitution
-
-//Deben cumplir con los paramateros establecidos, para no romper promesas
-
-//I — Interface Segregation
-
-//IAuth
-//Ichat
-
-//D — Dependency Inversion
-
-// LoginUseCase depende de IAuthRepository (abstracción) realiza 
-//constructor(private readonly authRepo: IAuthRepository) {}
-
-// NO hace esto :
-//onstructor(private readonly authRepo: SupabaseAuthRepository) {} no realiza
 
 ================================================
 📄 ARCHIVO: src\features\auth\presentation\store\authStore.ts
@@ -2847,17 +4046,17 @@ import { create } from 'zustand';
 import { User } from '../../domain/entities/User';
 
 interface AuthState {
-    user: User | null;
-    setUser: (user: User | null) => void;
-    isVendedor: () => boolean;  // ← helper de conveniencia
-    isCliente:  () => boolean;
+  user: User | null;
+  setUser: (user: User | null) => void;
+  isRefugio:   () => boolean;
+  isAdoptante: () => boolean;
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
-    user: null,
-    setUser: (user) => set({ user }),
-    isVendedor: () => get().user?.role === 'vendedor',
-    isCliente:  () => get().user?.role === 'cliente',
+  user: null,
+  setUser: (user) => set({ user }),
+  isRefugio:   () => get().user?.role === 'refugio',
+  isAdoptante: () => get().user?.role === 'adoptante',
 }));
 
 ================================================
@@ -2988,6 +4187,106 @@ export interface IChatRepository {
 
 
 ================================================
+📄 ARCHIVO: src\features\chat\infrastructure\repositories\AppwriteChatRepository.ts
+================================================
+
+import { databases, appwriteClient } from '@shared/infrastructure/appwrite/client';
+import { ID, Query } from 'appwrite';
+import { Message, Room } from '@features/chat/domain/entities/Message';
+import { IChatRepository } from '@features/chat/domain/repositories/IChatRepository';
+
+const DB_ID        = process.env.EXPO_PUBLIC_APPWRITE_DATABASE_ID!;
+const ROOMS_COL    = process.env.EXPO_PUBLIC_APPWRITE_ROOMS_COLLECTION!;
+const MSGS_COL     = process.env.EXPO_PUBLIC_APPWRITE_MESSAGES_COLLECTION!;
+const PROFILES_COL = process.env.EXPO_PUBLIC_APPWRITE_PROFILES_COLLECTION!;
+
+export class AppwriteChatRepository implements IChatRepository {
+
+  async getRooms(): Promise<Room[]> {
+    const res = await databases.listDocuments(DB_ID, ROOMS_COL, [
+      Query.orderDesc('$createdAt'),
+    ]);
+    return res.documents.map(this.mapRoom);
+  }
+
+  async createRoom(name: string, userId: string): Promise<Room> {
+    const doc = await databases.createDocument(DB_ID, ROOMS_COL, ID.unique(), {
+      name,
+      createdBy: userId,
+    });
+    return this.mapRoom(doc);
+  }
+
+  async getMessages(roomId: string): Promise<Message[]> {
+    const res = await databases.listDocuments(DB_ID, MSGS_COL, [
+      Query.equal('roomId', roomId),
+      Query.orderAsc('$createdAt'),
+      Query.limit(50),
+    ]);
+    return res.documents.map(this.mapMessage);
+  }
+
+  async sendMessage(
+    roomId: string,
+    userId: string,
+    content: string,
+    imageUrl?: string,
+  ): Promise<Message> {
+    let authorUsername = '';
+    try {
+      const profileResult = await databases.listDocuments(DB_ID, PROFILES_COL, [
+        Query.equal('userId', userId),
+      ]);
+      authorUsername = profileResult.documents[0]?.username ?? '';
+    } catch {
+      // Si falla el mensaje igual se envía
+    }
+
+    const doc = await databases.createDocument(DB_ID, MSGS_COL, ID.unique(), {
+      roomId,
+      userId,
+      content,
+      imageUrl:       imageUrl ?? null,
+      authorUsername,
+    });
+    return this.mapMessage(doc);
+  }
+
+  subscribeToRoom(roomId: string, onMessage: (msg: Message) => void): () => void {
+    const channel = `databases.${DB_ID}.collections.${MSGS_COL}.documents`;
+
+    const unsubscribe = appwriteClient.subscribe(channel, (response: any) => {
+      const isCreate = response.events?.some((e: string) => e.includes('.create'));
+      if (!isCreate) return;
+
+      const doc = response.payload;
+      if (doc.roomId !== roomId) return;
+
+      onMessage(this.mapMessage(doc));
+    });
+
+    return unsubscribe;
+  }
+
+  private mapRoom = (doc: any): Room => ({
+    id:        doc.$id,
+    name:      doc.name,
+    createdBy: doc.createdBy,
+    createdAt: new Date(doc.$createdAt),
+  });
+
+  private mapMessage = (doc: any): Message => ({
+    id:             doc.$id,
+    roomId:         doc.roomId,
+    userId:         doc.userId,
+    content:        doc.content,
+    createdAt:      new Date(doc.$createdAt),
+    authorUsername: doc.authorUsername ?? undefined,
+    imageUrl:       doc.imageUrl ?? undefined,
+  });
+}
+
+================================================
 📄 ARCHIVO: src\features\chat\infrastructure\repositories\SupabaseChatRepository.ts
 ================================================
 
@@ -3089,12 +4388,15 @@ import { GetMessagesUseCase } from "@features/chat/application/use-cases/GetMess
 import { SendMessageUseCase } from "@features/chat/application/use-cases/SendMessageUseCase";
 import { SubscribeToRoomUseCase } from "@features/chat/application/use-cases/SubscribeToRoomUseCase";
 import { Message } from "@features/chat/domain/entities/Message";
-import { SupabaseChatRepository } from "@features/chat/infrastructure/repositories/SupabaseChatRepository";
+//import { SupabaseChatRepository } from "@features/chat/infrastructure/repositories/SupabaseChatRepository";
+import { AppwriteChatRepository } from '@features/chat/infrastructure/repositories/AppwriteChatRepository';
+
 import { showMessageNotification } from "@shared/infrastructure/notifications/NotificationService";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 
-const chatRepo           = new SupabaseChatRepository();
+//const chatRepo           = new SupabaseChatRepository();
+const chatRepo           = new AppwriteChatRepository();
 const sendMessageUseCase = new SendMessageUseCase(chatRepo);
 const getMessagesUseCase = new GetMessagesUseCase(chatRepo);
 const subscribeUseCase   = new SubscribeToRoomUseCase(chatRepo);
@@ -3204,10 +4506,12 @@ export function useChat(roomId: string) {
 import { useAuthStore } from "@features/auth/presentation/store/authStore";
 import { CreateRoomUseCase } from "@features/chat/application/use-cases/CreateRoomUseCase";
 import { Room } from "@features/chat/domain/entities/Message";
-import { SupabaseChatRepository } from "@features/chat/infrastructure/repositories/SupabaseChatRepository";
+//import { SupabaseChatRepository } from "@features/chat/infrastructure/repositories/SupabaseChatRepository";
+import { AppwriteChatRepository } from '@features/chat/infrastructure/repositories/AppwriteChatRepository';
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-const chatRepo = new SupabaseChatRepository();
+//const chatRepo = new SupabaseChatRepository();
+const chatRepo = new AppwriteChatRepository();
 const createRoomUseCase = new CreateRoomUseCase(chatRepo);
 
 export function useRooms() {
@@ -3249,30 +4553,488 @@ export function useRooms() {
 
 
 ================================================
+📄 ARCHIVO: src\features\pets\application\use-cases\CreatePetUseCase.ts
+================================================
+
+import { PetError } from '@shared/domain/errors/AppError';
+import { Pet } from '../../domain/entities/Pet';
+import { IPetRepository } from '../../domain/repositories/IPetRepository';
+
+export class CreatePetUseCase {
+  constructor(private readonly repo: IPetRepository) {}
+  async execute(data: Omit<Pet, 'id' | 'createdAt'>): Promise<Pet> {
+    if (!data.name) throw new PetError('El nombre es obligatorio');
+    if (!data.shelterId) throw new PetError('El refugio es obligatorio');
+    return this.repo.create(data);
+  }
+}
+
+================================================
+📄 ARCHIVO: src\features\pets\application\use-cases\DeletePetUseCase.ts
+================================================
+
+import { IPetRepository } from '../../domain/repositories/IPetRepository';
+
+export class DeletePetUseCase {
+  constructor(private readonly repo: IPetRepository) {}
+  execute(id: string): Promise<void> {
+    return this.repo.delete(id);
+  }
+}
+
+================================================
+📄 ARCHIVO: src\features\pets\application\use-cases\GetPetsUseCase.ts
+================================================
+
+import { Pet } from '../../domain/entities/Pet';
+import { IPetRepository, PetFilters } from '../../domain/repositories/IPetRepository';
+
+export class GetPetsUseCase {
+  constructor(private readonly repo: IPetRepository) {}
+  execute(filters?: PetFilters): Promise<Pet[]> {
+    return this.repo.getAll(filters);
+  }
+}
+
+================================================
+📄 ARCHIVO: src\features\pets\application\use-cases\UpdatePetUseCase.ts
+================================================
+
+import { Pet } from '../../domain/entities/Pet';
+import { IPetRepository } from '../../domain/repositories/IPetRepository';
+
+export class UpdatePetUseCase {
+  constructor(private readonly repo: IPetRepository) {}
+  execute(id: string, data: Partial<Pet>): Promise<Pet> {
+    return this.repo.update(id, data);
+  }
+}
+
+================================================
+📄 ARCHIVO: src\features\pets\domain\entities\Pet.ts
+================================================
+
+export type PetSpecies  = 'perro' | 'gato' | 'conejo' | 'ave' | 'otro';
+export type PetGender   = 'macho' | 'hembra';
+export type PetSize     = 'pequeño' | 'mediano' | 'grande';
+export type PetStatus   = 'disponible' | 'en_proceso' | 'adoptado';
+
+export interface Pet {
+  id:          string;
+  shelterId:   string;
+  shelterName?: string;
+  name:        string;
+  species:     PetSpecies;
+  breed?:      string;
+  age?:        number;
+  gender:      PetGender;
+  size:        PetSize;
+  description?: string;
+  imageUrl?:   string;
+  isVaccinated: boolean;
+  isSterilized: boolean;
+  status:      PetStatus;
+  createdAt:   Date;
+}
+
+================================================
+📄 ARCHIVO: src\features\pets\domain\repositories\IPetRepository.ts
+================================================
+
+import { Pet } from '../entities/Pet';
+
+export interface PetFilters {
+  species?: string;
+  size?:    string;
+  gender?:  string;
+  status?:  string;
+}
+
+export interface IPetRepository {
+  getAll(filters?: PetFilters): Promise<Pet[]>;
+  getById(id: string): Promise<Pet>;
+  getByShelter(shelterId: string): Promise<Pet[]>;
+  create(pet: Omit<Pet, 'id' | 'createdAt'>): Promise<Pet>;
+  update(id: string, data: Partial<Pet>): Promise<Pet>;
+  delete(id: string): Promise<void>;
+}
+
+================================================
+📄 ARCHIVO: src\features\pets\infrastructure\repositories\SupabasePetRepository.ts
+================================================
+
+import { supabase } from '@shared/infrastructure/supabase/client';
+import { Pet } from '../../domain/entities/Pet';
+import { IPetRepository, PetFilters } from '../../domain/repositories/IPetRepository';
+
+export class SupabasePetRepository implements IPetRepository {
+
+  async getAll(filters?: PetFilters): Promise<Pet[]> {
+    let query = supabase
+      .from('pets')
+      .select('*, profiles(username)')
+      .order('created_at', { ascending: false });
+
+    if (filters?.species) query = query.eq('species', filters.species);
+    if (filters?.size)    query = query.eq('size', filters.size);
+    if (filters?.gender)  query = query.eq('gender', filters.gender);
+    if (filters?.status)  query = query.eq('status', filters.status);
+    else query = query.eq('status', 'disponible');
+
+    const { data, error } = await query;
+    if (error) throw new Error(error.message);
+    return (data ?? []).map(this._map);
+  }
+
+  async getById(id: string): Promise<Pet> {
+    const { data, error } = await supabase
+      .from('pets').select('*, profiles(username)')
+      .eq('id', id).single();
+    if (error) throw new Error(error.message);
+    return this._map(data);
+  }
+
+  async getByShelter(shelterId: string): Promise<Pet[]> {
+    const { data, error } = await supabase
+      .from('pets').select('*')
+      .eq('shelter_id', shelterId)
+      .order('created_at', { ascending: false });
+    if (error) throw new Error(error.message);
+    return (data ?? []).map(this._map);
+  }
+
+  async create(pet: Omit<Pet, 'id' | 'createdAt'>): Promise<Pet> {
+    const { data, error } = await supabase
+      .from('pets')
+      .insert({
+        shelter_id:    pet.shelterId,
+        name:          pet.name,
+        species:       pet.species,
+        breed:         pet.breed,
+        age:           pet.age,
+        gender:        pet.gender,
+        size:          pet.size,
+        description:   pet.description,
+        image_url:     pet.imageUrl,
+        is_vaccinated: pet.isVaccinated,
+        is_sterilized: pet.isSterilized,
+        status:        pet.status ?? 'disponible',
+      })
+      .select().single();
+    if (error) throw new Error(error.message);
+    return this._map(data);
+  }
+
+  async update(id: string, pet: Partial<Pet>): Promise<Pet> {
+    const { data, error } = await supabase
+      .from('pets')
+      .update({
+        name:          pet.name,
+        species:       pet.species,
+        breed:         pet.breed,
+        age:           pet.age,
+        gender:        pet.gender,
+        size:          pet.size,
+        description:   pet.description,
+        image_url:     pet.imageUrl,
+        is_vaccinated: pet.isVaccinated,
+        is_sterilized: pet.isSterilized,
+        status:        pet.status,
+      })
+      .eq('id', id).select().single();
+    if (error) throw new Error(error.message);
+    return this._map(data);
+  }
+
+  async delete(id: string): Promise<void> {
+    const { error } = await supabase.from('pets').delete().eq('id', id);
+    if (error) throw new Error(error.message);
+  }
+
+  private _map = (raw: any): Pet => ({
+    id:           raw.id,
+    shelterId:    raw.shelter_id,
+    shelterName:  raw.profiles?.username ?? undefined,
+    name:         raw.name,
+    species:      raw.species,
+    breed:        raw.breed ?? undefined,
+    age:          raw.age ?? undefined,
+    gender:       raw.gender,
+    size:         raw.size,
+    description:  raw.description ?? undefined,
+    imageUrl:     raw.image_url ?? undefined,
+    isVaccinated: raw.is_vaccinated ?? false,
+    isSterilized: raw.is_sterilized ?? false,
+    status:       raw.status,
+    createdAt:    new Date(raw.created_at),
+  });
+}
+
+================================================
+📄 ARCHIVO: src\features\pets\presentation\hooks\usePets.ts
+================================================
+
+import { useAuthStore } from '@features/auth/presentation/store/authStore';
+import { CreatePetUseCase } from '../../application/use-cases/CreatePetUseCase';
+import { DeletePetUseCase } from '../../application/use-cases/DeletePetUseCase';
+import { GetPetsUseCase } from '../../application/use-cases/GetPetsUseCase';
+import { UpdatePetUseCase } from '../../application/use-cases/UpdatePetUseCase';
+import { Pet, PetStatus } from '../../domain/entities/Pet';
+import { PetFilters } from '../../domain/repositories/IPetRepository';
+import { SupabasePetRepository } from '../../infrastructure/repositories/SupabasePetRepository';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+
+const repo           = new SupabasePetRepository();
+const getPetsUseCase = new GetPetsUseCase(repo);
+const createUseCase  = new CreatePetUseCase(repo);
+const updateUseCase  = new UpdatePetUseCase(repo);
+const deleteUseCase  = new DeletePetUseCase(repo);
+
+export function usePets(filters?: PetFilters) {
+  const queryClient = useQueryClient();
+  const user        = useAuthStore((s) => s.user);
+  const queryKey    = ['pets', filters];
+
+  const { data: pets = [], isLoading, error } = useQuery({
+    queryKey,
+    queryFn: () => getPetsUseCase.execute(filters),
+    enabled: !!user,
+  });
+
+  const shelterQuery = useQuery({
+    queryKey: ['pets', 'shelter', user?.id],
+    queryFn:  () => repo.getByShelter(user!.id),
+    enabled:  !!user && user.role === 'refugio',
+  });
+
+  const createMutation = useMutation({
+    mutationFn: (data: Omit<Pet, 'id' | 'createdAt'>) => createUseCase.execute(data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['pets'] }),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<Pet> }) =>
+      updateUseCase.execute(id, data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['pets'] }),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => deleteUseCase.execute(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['pets'] }),
+  });
+
+  return {
+    pets,
+    shelterPets:   shelterQuery.data ?? [],
+    isLoading,
+    error:         error?.message ?? null,
+    createPet:     createMutation.mutate,
+    updatePet:     updateMutation.mutate,
+    deletePet:     deleteMutation.mutate,
+    isCreating:    createMutation.isPending,
+    isUpdating:    updateMutation.isPending,
+    createError:   createMutation.error?.message ?? null,
+  };
+}
+
+================================================
+📄 ARCHIVO: src\features\requests\domain\entities\Request.ts
+================================================
+
+export type RequestStatus = 'pendiente' | 'aprobada' | 'rechazada';
+
+export interface AdoptionRequest {
+  id:          string;
+  petId:       string;
+  petName?:    string;
+  petImage?:   string;
+  adopterId:   string;
+  adopterName?: string;
+  shelterId:   string;
+  message?:    string;
+  status:      RequestStatus;
+  createdAt:   Date;
+}
+
+================================================
+📄 ARCHIVO: src\features\requests\domain\repositories\IRequestRepository.ts
+================================================
+
+import { AdoptionRequest } from '../entities/Request';
+
+export interface IRequestRepository {
+  getByAdopter(adopterId: string): Promise<AdoptionRequest[]>;
+  getByShelter(shelterId: string): Promise<AdoptionRequest[]>;
+  create(petId: string, adopterId: string, shelterId: string, message?: string): Promise<AdoptionRequest>;
+  updateStatus(id: string, status: 'aprobada' | 'rechazada'): Promise<AdoptionRequest>;
+}
+
+================================================
+📄 ARCHIVO: src\features\requests\infrastructure\repositories\SupabaseRequestRepository.ts
+================================================
+
+import { supabase } from '@shared/infrastructure/supabase/client';
+import { AdoptionRequest } from '../../domain/entities/Request';
+import { IRequestRepository } from '../../domain/repositories/IRequestRepository';
+
+export class SupabaseRequestRepository implements IRequestRepository {
+
+  async getByAdopter(adopterId: string): Promise<AdoptionRequest[]> {
+    const { data, error } = await supabase
+      .from('adoption_requests')
+      .select('*, pets(name, image_url)')
+      .eq('adopter_id', adopterId)
+      .order('created_at', { ascending: false });
+    if (error) throw new Error(error.message);
+    return (data ?? []).map(this._map);
+  }
+
+  async getByShelter(shelterId: string): Promise<AdoptionRequest[]> {
+    const { data, error } = await supabase
+      .from('adoption_requests')
+      .select('*, pets(name, image_url), profiles(username)')
+      .eq('shelter_id', shelterId)
+      .order('created_at', { ascending: false });
+    if (error) throw new Error(error.message);
+    return (data ?? []).map(this._map);
+  }
+
+  async create(
+    petId: string,
+    adopterId: string,
+    shelterId: string,
+    message?: string
+  ): Promise<AdoptionRequest> {
+    const { data, error } = await supabase
+      .from('adoption_requests')
+      .insert({ pet_id: petId, adopter_id: adopterId, shelter_id: shelterId, message })
+      .select().single();
+    if (error) throw new Error(error.message);
+    return this._map(data);
+  }
+
+  async updateStatus(
+    id: string,
+    status: 'aprobada' | 'rechazada'
+  ): Promise<AdoptionRequest> {
+    const { data, error } = await supabase
+      .from('adoption_requests')
+      .update({ status })
+      .eq('id', id).select().single();
+    if (error) throw new Error(error.message);
+    return this._map(data);
+  }
+
+  private _map = (raw: any): AdoptionRequest => ({
+    id:          raw.id,
+    petId:       raw.pet_id,
+    petName:     raw.pets?.name ?? undefined,
+    petImage:    raw.pets?.image_url ?? undefined,
+    adopterId:   raw.adopter_id,
+    adopterName: raw.profiles?.username ?? undefined,
+    shelterId:   raw.shelter_id,
+    message:     raw.message ?? undefined,
+    status:      raw.status,
+    createdAt:   new Date(raw.created_at),
+  });
+} 
+
+================================================
+📄 ARCHIVO: src\features\requests\presentation\hooks\useRequests.ts
+================================================
+
+import { useAuthStore } from '@features/auth/presentation/store/authStore';
+import { SupabaseRequestRepository } from '../../infrastructure/repositories/SupabaseRequestRepository';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+
+const repo = new SupabaseRequestRepository();
+
+export function useRequests() {
+  const user        = useAuthStore((s) => s.user);
+  const queryClient = useQueryClient();
+
+  const adopterQuery = useQuery({
+    queryKey: ['requests', 'adopter', user?.id],
+    queryFn:  () => repo.getByAdopter(user!.id),
+    enabled:  !!user && user.role === 'adoptante',
+  });
+
+  const shelterQuery = useQuery({
+    queryKey: ['requests', 'shelter', user?.id],
+    queryFn:  () => repo.getByShelter(user!.id),
+    enabled:  !!user && user.role === 'refugio',
+  });
+
+  const createMutation = useMutation({
+    mutationFn: ({
+      petId, shelterId, message,
+    }: { petId: string; shelterId: string; message?: string }) =>
+      repo.create(petId, user!.id, shelterId, message),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ['requests', 'adopter', user?.id] }),
+  });
+
+  const updateStatusMutation = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: 'aprobada' | 'rechazada' }) =>
+      repo.updateStatus(id, status),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ['requests', 'shelter', user?.id] }),
+  });
+
+  return {
+    myRequests:     adopterQuery.data ?? [],
+    shelterRequests: shelterQuery.data ?? [],
+    isLoading:      adopterQuery.isLoading || shelterQuery.isLoading,
+    sendRequest:    createMutation.mutate,
+    updateStatus:   updateStatusMutation.mutate,
+    isSending:      createMutation.isPending,
+    sendError:      createMutation.error?.message ?? null,
+  };
+}
+
+================================================
 📄 ARCHIVO: src\shared\domain\errors\AppError.ts
 ================================================
 
 export class AppError extends Error {
-    constructor(
-        public readonly code: string,
-        message: string,
-        public readonly cause?: unknown
-    ) {
-        super(message);
-        this.name = 'AppError';
-    }
+  constructor(
+    public readonly code: string,
+    message: string,
+    public readonly cause?: unknown
+  ) {
+    super(message);
+    this.name = 'AppError';
+  }
 }
 
 export class AuthError extends AppError {
-    constructor(message: string, cause?: unknown) {
-        super('AUTH_ERROR', message, cause);
-    }
+  constructor(message: string, cause?: unknown) {
+    super('AUTH_ERROR', message, cause);
+  }
+}
+
+export class PetError extends AppError {
+  constructor(message: string, cause?: unknown) {
+    super('PET_ERROR', message, cause);
+  }
+}
+
+export class RequestError extends AppError {
+  constructor(message: string, cause?: unknown) {
+    super('REQUEST_ERROR', message, cause);
+  }
+}
+
+export class AssistantError extends AppError {
+  constructor(message: string, cause?: unknown) {
+    super('ASSISTANT_ERROR', message, cause);
+  }
 }
 
 export class ChatError extends AppError {
-    constructor(message: string, cause?: unknown) {
-        super('CHAT_ERROR', message, cause);
-    }
+  constructor(message: string, cause?: unknown) {
+    super('CHAT_ERROR', message, cause);
+  }
 }
 
 ================================================
@@ -3280,15 +5042,73 @@ export class ChatError extends AppError {
 ================================================
 
 import { Client, Account, Databases, Storage } from 'appwrite';
+import { Platform } from 'react-native';
+
+// Fix: Appwrite Realtime usa localStorage pero React Native no lo tiene
+if (Platform.OS !== 'web') {
+  const _storage: Record<string, string> = {};
+  (global as any).localStorage = {
+    getItem:    (key: string) => _storage[key] ?? null,
+    setItem:    (key: string, value: string) => { _storage[key] = value; },
+    removeItem: (key: string) => { delete _storage[key]; },
+    clear:      () => { Object.keys(_storage).forEach(k => delete _storage[k]); },
+  };
+}
 
 const client = new Client()
-.setEndpoint(process.env.EXPO_PUBLIC_APPWRITE_ENDPOINT!)
-.setProject(process.env.EXPO_PUBLIC_APPWRITE_PROJECT_ID!);
+  .setEndpoint(process.env.EXPO_PUBLIC_APPWRITE_ENDPOINT!)
+  .setProject(process.env.EXPO_PUBLIC_APPWRITE_PROJECT_ID!);
 
 export const account        = new Account(client);
 export const databases      = new Databases(client);
-export const storage        = new Storage(client);
 export const appwriteClient = client;
+export const storage        = new Storage(client);
+
+================================================
+📄 ARCHIVO: src\shared\infrastructure\gemini\client.ts
+================================================
+
+const GEMINI_URL =
+  'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent';
+
+export interface GeminiMessage {
+  role: 'user' | 'model';
+  parts: { text: string }[];
+}
+
+export async function sendGeminiMessage(
+  history: GeminiMessage[],
+  userMessage: string,
+): Promise<string> {
+  const messages: GeminiMessage[] = [
+    ...history,
+    { role: 'user', parts: [{ text: userMessage }] },
+  ];
+
+  const response = await fetch(
+    `${GEMINI_URL}?key=${process.env.EXPO_PUBLIC_GEMINI_API_KEY}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: messages,
+        systemInstruction: {
+          parts: [{
+            text: `Eres VetBot, el asistente virtual de PetAdopt. 
+Ayudas con dudas sobre salud, cuidados, alimentación y comportamiento de mascotas. 
+Responde siempre en español, de forma amable y clara. 
+Si la pregunta es de emergencia médica, recomienda ir al veterinario inmediatamente.
+No respondas temas que no estén relacionados con mascotas o adopción.`,
+          }],
+        },
+      }),
+    }
+  );
+
+  if (!response.ok) throw new Error('Error al contactar el asistente');
+  const data: any = await response.json();
+  return data.candidates?.[0]?.content?.parts?.[0]?.text ?? 'Sin respuesta';
+}
 
 ================================================
 📄 ARCHIVO: src\shared\infrastructure\notifications\NotificationService.ts
@@ -3389,46 +5209,41 @@ export const supabase = createClient(
 
 import * as FileSystem from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
-import { supabase } from './client';
 import { decode } from 'base64-arraybuffer';
+import { supabase } from './client';
 
-export async function pickAndUploadImage(): Promise<string | null> {
+export async function pickAndUploadPetImage(): Promise<string | null> {
   const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-  if (status !== 'granted') {
+  if (status !== 'granted')
     throw new Error('Se necesita permiso para acceder a la galería');
-  }
 
   const result = await ImagePicker.launchImageLibraryAsync({
-    mediaTypes: ['images'],   // ✅ nueva API sin MediaTypeOptions
+    mediaTypes: ['images'],
     allowsEditing: true,
-    quality: 0.7,
-    base64: true,             // pedimos base64 directo para evitar FileSystem
+    aspect: [4, 3],
+    quality: 0.8,
+    base64: true,
   });
 
-  if (result.canceled || !result.assets || result.assets.length === 0) return null;
+  if (result.canceled || !result.assets?.length) return null;
 
   const asset = result.assets[0];
-
   let base64: string;
+
   if (asset.base64) {
-    // ✅ base64 viene directo del picker, no necesitamos FileSystem
     base64 = asset.base64;
   } else if (asset.uri) {
-    // Fallback: leer desde disco con la API correcta de expo-file-system v19
-    const fileContent = await FileSystem.readAsStringAsync(asset.uri, {
-      encoding: 'base64',     // ✅ string literal en lugar de FileSystem.EncodingType.Base64
-    });
-    base64 = fileContent;
+    base64 = await FileSystem.readAsStringAsync(asset.uri, { encoding: 'base64' });
   } else {
     throw new Error('No se pudo obtener la imagen');
   }
 
   const ext = asset.uri?.split('.').pop()?.toLowerCase() ?? 'jpg';
-  const fileName = `${Date.now()}.${ext}`;
-  const filePath = `public/${fileName}`;
+  const fileName = `pet-${Date.now()}.${ext}`;
+  const filePath = `pets/${fileName}`;
 
   const { error } = await supabase.storage
-    .from('chat-images')
+    .from('pet-images')
     .upload(filePath, decode(base64), {
       contentType: `image/${ext}`,
       upsert: false,
@@ -3436,10 +5251,7 @@ export async function pickAndUploadImage(): Promise<string | null> {
 
   if (error) throw new Error(error.message);
 
-  const { data } = supabase.storage
-    .from('chat-images')
-    .getPublicUrl(filePath);
-
+  const { data } = supabase.storage.from('pet-images').getPublicUrl(filePath);
   return data.publicUrl;
 }
 
@@ -3458,7 +5270,7 @@ export async function pickAndUploadImage(): Promise<string | null> {
     },
     "baseUrl": ".",
     "lib": ["ESNext"],
-    "ignoreDeprecations": "6.0"
+    "ignoreDeprecations": "5.0"
   },
   "include": [
     "**/*.ts",

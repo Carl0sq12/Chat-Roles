@@ -1,6 +1,7 @@
-import { useAuth } from "@features/auth/presentation/hooks/useAuth";
-import { Link } from "expo-router";
-import { useState } from "react";
+import { useAuth } from '@features/auth/presentation/hooks/useAuth';
+import { E } from '@/constants/theme';
+import { Link } from 'expo-router';
+import { useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -11,26 +12,8 @@ import {
   TextInput,
   TouchableOpacity,
   View,
-} from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-
-const E = {
-  bg:        '#080810',
-  bg2:       '#0d0d1a',
-  card:      '#10101e',
-  violet:    '#7c3aed',
-  violetDk:  '#5b21b6',
-  violetDim: 'rgba(124,58,237,0.12)',
-  violetGlw: 'rgba(124,58,237,0.4)',
-  neon:      '#a855f7',
-  neonSoft:  '#c084fc',
-  cyan:      '#22d3ee',
-  text:      '#e2e8f0',
-  textDim:   '#94a3b8',
-  textMute:  '#475569',
-  border:    'rgba(124,58,237,0.22)',
-  borderAct: 'rgba(124,58,237,0.7)',
-};
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function LoginScreen() {
   const [email, setEmail]       = useState('');
@@ -49,29 +32,30 @@ export default function LoginScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-
-        {/* ── Logo ── */}
+        {/* Logo */}
         <View style={s.logoWrap}>
           <View style={s.logoIcon}>
-            <Text style={s.logoIconText}>◈</Text>
+            <Text style={s.logoEmoji}>🐾</Text>
           </View>
           <View>
-            <Text style={s.logoText}>ENIGMA<Text style={s.logoDot}>.</Text></Text>
-            <Text style={s.logoTag}>ENCRYPTED MESSAGING</Text>
+            <Text style={s.logoText}>
+              Pet<Text style={s.logoAccent}>Adopt</Text>
+            </Text>
+            <Text style={s.logoTag}>ADOPTA UN AMIGO HOY</Text>
           </View>
         </View>
 
-        {/* ── Hero ── */}
+        {/* Hero */}
         <View style={s.hero}>
-          <Text style={s.eyebrow}>// ACCESO SEGURO</Text>
-          <Text style={s.titleLight}>Bienvenido</Text>
-          <Text style={s.titleDark}>de <Text style={s.accent}>vuelta.</Text></Text>
-          <Text style={s.subtitle}>Autenticación cifrada de extremo a extremo</Text>
+          <Text style={s.eyebrow}>BIENVENIDO DE VUELTA</Text>
+          <Text style={s.title}>Inicia <Text style={s.titleAccent}>sesión</Text></Text>
+          <Text style={s.subtitle}>
+            Conecta con refugios y encuentra tu compañero ideal
+          </Text>
         </View>
 
-        {/* ── Card ── */}
+        {/* Card */}
         <View style={s.card}>
-          {/* top glow line */}
           <View style={s.cardTopLine} />
 
           {error && (
@@ -82,9 +66,9 @@ export default function LoginScreen() {
 
           {/* Email */}
           <View style={s.fieldWrap}>
-            <Text style={s.fieldLabel}>&gt; EMAIL</Text>
+            <Text style={s.fieldLabel}>EMAIL</Text>
             <View style={[s.inputWrap, focused === 'email' && s.inputFocused]}>
-              <Text style={s.inputIcon}>@</Text>
+              <Text style={s.inputIcon}>✉</Text>
               <TextInput
                 style={s.input}
                 value={email}
@@ -101,9 +85,9 @@ export default function LoginScreen() {
 
           {/* Password */}
           <View style={s.fieldWrap}>
-            <Text style={s.fieldLabel}>&gt; CONTRASEÑA</Text>
+            <Text style={s.fieldLabel}>CONTRASEÑA</Text>
             <View style={[s.inputWrap, focused === 'password' && s.inputFocused]}>
-              <Text style={s.inputIcon}>▣</Text>
+              <Text style={s.inputIcon}>🔒</Text>
               <TextInput
                 style={s.input}
                 value={password}
@@ -117,35 +101,40 @@ export default function LoginScreen() {
             </View>
           </View>
 
+          {/* Forgot password */}
+          <TouchableOpacity style={s.forgotWrap}>
+            <Link href={'/(auth)/forgot-password' as any}>
+              <Text style={s.forgotText}>¿Olvidaste tu contraseña?</Text>
+            </Link>
+          </TouchableOpacity>
+
           {/* Divider */}
           <View style={s.divider}>
             <View style={s.dividerLine} />
-            <Text style={s.dividerText}>EXEC</Text>
+            <Text style={s.dividerText}>o</Text>
             <View style={s.dividerLine} />
           </View>
 
-          {/* Primary button */}
+          {/* Botón principal */}
           <TouchableOpacity
             style={[s.btnPrimary, isLoading && s.btnDisabled]}
             onPress={() => login({ email, password })}
             disabled={isLoading}
             activeOpacity={0.85}
           >
-            {isLoading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={s.btnPrimaryText}>INICIAR SESIÓN  →</Text>
-            )}
+            {isLoading
+              ? <ActivityIndicator color="#fff" />
+              : <Text style={s.btnPrimaryText}>Iniciar sesión →</Text>
+            }
           </TouchableOpacity>
 
-          {/* Ghost button */}
-          <TouchableOpacity style={s.btnGhost} activeOpacity={0.7}>
+          {/* Ir a registro */}
+          <View style={s.footerRow}>
+            <Text style={s.footerText}>¿No tienes cuenta? </Text>
             <Link href="/(auth)/register">
-              <Text style={s.btnGhostText}>
-                SIN CUENTA — <Text style={s.btnGhostAccent}>REGISTRARSE</Text>
-              </Text>
+              <Text style={s.footerLink}>Regístrate</Text>
             </Link>
-          </TouchableOpacity>
+          </View>
         </View>
 
       </ScrollView>
@@ -157,93 +146,92 @@ const s = StyleSheet.create({
   root:   { flex: 1, backgroundColor: E.bg },
   scroll: { flexGrow: 1, paddingHorizontal: 24, paddingVertical: 48, justifyContent: 'center' },
 
-  logoWrap: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 44 },
+  // Logo
+  logoWrap: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 40 },
   logoIcon: {
-    width: 40, height: 40,
-    backgroundColor: E.violet,
-    borderRadius: 12,
+    width: 52, height: 52,
+    backgroundColor: E.primary, borderRadius: 16,
     alignItems: 'center', justifyContent: 'center',
-    shadowColor: E.violet, shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8, shadowRadius: 16, elevation: 8,
+    shadowColor: E.primary, shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4, shadowRadius: 12, elevation: 8,
   },
-  logoIconText: { fontSize: 18, color: '#fff' },
-  logoText:  { fontSize: 20, fontWeight: '800', color: '#fff', letterSpacing: -0.5 },
-  logoDot:   { color: E.neon },
-  logoTag:   { fontSize: 8, color: E.textMute, letterSpacing: 3, marginTop: 1 },
+  logoEmoji: { fontSize: 26 },
+  logoText:  { fontSize: 22, fontWeight: '800', color: E.text, letterSpacing: -0.5 },
+  logoAccent:{ color: E.primary },
+  logoTag:   { fontSize: 9, color: E.textMute, letterSpacing: 2.5, marginTop: 2 },
 
-  hero:      { marginBottom: 28 },
-  eyebrow:   { fontSize: 10, color: E.violet, letterSpacing: 2, marginBottom: 10 },
-  titleLight:{ fontSize: 40, fontWeight: '400', color: E.textMute, letterSpacing: -1.5, lineHeight: 44 },
-  titleDark: { fontSize: 40, fontWeight: '800', color: '#fff', letterSpacing: -1.5, lineHeight: 44, marginTop: -4 },
-  accent:    { color: E.neon },
-  subtitle:  { fontSize: 11, color: E.textMute, marginTop: 10, letterSpacing: 0.3, lineHeight: 18 },
+  // Hero
+  hero:     { marginBottom: 28 },
+  eyebrow:  { fontSize: 10, color: E.primary, letterSpacing: 2.5, marginBottom: 8, fontWeight: '600' },
+  title:    { fontSize: 36, fontWeight: '800', color: E.text, letterSpacing: -1, lineHeight: 42 },
+  titleAccent: { color: E.primary },
+  subtitle: { fontSize: 13, color: E.textDim, marginTop: 8, lineHeight: 20 },
 
+  // Card
   card: {
     backgroundColor: E.card,
-    borderRadius: 24,
+    borderRadius: E.radius.xl,
     borderWidth: 1, borderColor: E.border,
     padding: 24,
-    overflow: 'hidden',
+    shadowColor: E.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08, shadowRadius: 20, elevation: 4,
   },
   cardTopLine: {
-    position: 'absolute', top: 0, left: 40, right: 40, height: 1,
-    backgroundColor: E.neon, opacity: 0.4,
+    position: 'absolute', top: 0, left: 40, right: 40,
+    height: 3, backgroundColor: E.primary,
+    borderBottomLeftRadius: 4, borderBottomRightRadius: 4,
   },
 
+  // Error
   errorBox: {
-    backgroundColor: 'rgba(239,68,68,0.1)',
-    borderRadius: 10, padding: 12, marginBottom: 16,
-    borderLeftWidth: 2, borderLeftColor: '#ef4444',
+    backgroundColor: 'rgba(239,68,68,0.08)',
+    borderRadius: E.radius.sm, padding: 12, marginBottom: 16,
+    borderLeftWidth: 3, borderLeftColor: E.danger,
   },
-  errorText: { color: '#f87171', fontSize: 12, letterSpacing: 0.3 },
+  errorText: { color: E.danger, fontSize: 13 },
 
-  fieldWrap: { marginBottom: 16 },
-  fieldLabel:{ fontSize: 9, color: E.violet, letterSpacing: 3, marginBottom: 8 },
-
+  // Fields
+  fieldWrap:  { marginBottom: 16 },
+  fieldLabel: {
+    fontSize: 11, color: E.textDim, letterSpacing: 1.5,
+    fontWeight: '600', marginBottom: 8,
+  },
   inputWrap: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: 'rgba(255,255,255,0.03)',
-    borderRadius: 12, borderWidth: 1, borderColor: E.border,
+    backgroundColor: E.bg2,
+    borderRadius: E.radius.md, borderWidth: 1.5, borderColor: E.border,
     paddingHorizontal: 14, paddingVertical: 13,
   },
   inputFocused: {
-    borderColor: E.violet,
-    ...Platform.select({
-      ios: {
-        shadowColor: E.violet,
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.4,
-        shadowRadius: 12,
-      },
-      android: {
-        // Evitamos sombras/elevaciones dinámicas en Android para prevenir reflow de layout
-      },
-    }),
+    borderColor: E.primary,
+    backgroundColor: E.primaryDim,
   },
-  inputIcon: { fontSize: 14, color: E.textMute },
-  input: { flex: 1, fontSize: 13, color: E.text, fontFamily: Platform.OS === 'ios' ? 'Menlo' : undefined },
+  inputIcon: { fontSize: 16 },
+  input: { flex: 1, fontSize: 14, color: E.text },
 
-  divider: { flexDirection: 'row', alignItems: 'center', gap: 10, marginVertical: 16 },
+  // Forgot
+  forgotWrap: { alignItems: 'flex-end', marginTop: -4, marginBottom: 16 },
+  forgotText: { fontSize: 12, color: E.primary, fontWeight: '600' },
+
+  // Divider
+  divider:     { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 },
   dividerLine: { flex: 1, height: 1, backgroundColor: E.border },
-  dividerText: { fontSize: 9, color: E.textMute, letterSpacing: 2 },
+  dividerText: { fontSize: 12, color: E.textMute },
 
+  // Botones
   btnPrimary: {
-    backgroundColor: E.violet,
-    borderRadius: 14, paddingVertical: 16,
-    alignItems: 'center', marginBottom: 12,
-    shadowColor: E.violet, shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.6, shadowRadius: 20, elevation: 8,
+    backgroundColor: E.primary,
+    borderRadius: E.radius.md, paddingVertical: 16,
+    alignItems: 'center', marginBottom: 16,
+    shadowColor: E.primary, shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4, shadowRadius: 12, elevation: 6,
   },
-  btnDisabled:     { opacity: 0.5 },
-  btnPrimaryText:  { color: '#fff', fontSize: 12, letterSpacing: 2, fontWeight: '600' },
+  btnDisabled:    { opacity: 0.5 },
+  btnPrimaryText: { color: '#fff', fontSize: 15, fontWeight: '700', letterSpacing: 0.3 },
 
-  btnGhost: {
-    borderRadius: 14, paddingVertical: 14,
-    alignItems: 'center',
-    borderWidth: 1, borderColor: E.border,
-  },
-  btnGhostText:   { fontSize: 11, color: E.textMute, letterSpacing: 1 },
-  btnGhostAccent: { color: E.neonSoft },
-
-  footer: { textAlign: 'center', marginTop: 32, fontSize: 9, color: E.textMute, letterSpacing: 3 },
+  // Footer
+  footerRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
+  footerText: { fontSize: 13, color: E.textDim },
+  footerLink: { fontSize: 13, color: E.primary, fontWeight: '700' },
 });

@@ -1,45 +1,40 @@
 import * as FileSystem from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
-import { supabase } from './client';
 import { decode } from 'base64-arraybuffer';
+import { supabase } from './client';
 
-export async function pickAndUploadImage(): Promise<string | null> {
+export async function pickAndUploadPetImage(): Promise<string | null> {
   const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-  if (status !== 'granted') {
+  if (status !== 'granted')
     throw new Error('Se necesita permiso para acceder a la galería');
-  }
 
   const result = await ImagePicker.launchImageLibraryAsync({
-    mediaTypes: ['images'],   // ✅ nueva API sin MediaTypeOptions
+    mediaTypes: ['images'],
     allowsEditing: true,
-    quality: 0.7,
-    base64: true,             // pedimos base64 directo para evitar FileSystem
+    aspect: [4, 3],
+    quality: 0.8,
+    base64: true,
   });
 
-  if (result.canceled || !result.assets || result.assets.length === 0) return null;
+  if (result.canceled || !result.assets?.length) return null;
 
   const asset = result.assets[0];
-
   let base64: string;
+
   if (asset.base64) {
-    // ✅ base64 viene directo del picker, no necesitamos FileSystem
     base64 = asset.base64;
   } else if (asset.uri) {
-    // Fallback: leer desde disco con la API correcta de expo-file-system v19
-    const fileContent = await FileSystem.readAsStringAsync(asset.uri, {
-      encoding: 'base64',     // ✅ string literal en lugar de FileSystem.EncodingType.Base64
-    });
-    base64 = fileContent;
+    base64 = await FileSystem.readAsStringAsync(asset.uri, { encoding: 'base64' });
   } else {
     throw new Error('No se pudo obtener la imagen');
   }
 
   const ext = asset.uri?.split('.').pop()?.toLowerCase() ?? 'jpg';
-  const fileName = `${Date.now()}.${ext}`;
-  const filePath = `public/${fileName}`;
+  const fileName = `pet-${Date.now()}.${ext}`;
+  const filePath = `pets/${fileName}`;
 
   const { error } = await supabase.storage
-    .from('chat-images')
+    .from('pet-images')
     .upload(filePath, decode(base64), {
       contentType: `image/${ext}`,
       upsert: false,
@@ -47,9 +42,6 @@ export async function pickAndUploadImage(): Promise<string | null> {
 
   if (error) throw new Error(error.message);
 
-  const { data } = supabase.storage
-    .from('chat-images')
-    .getPublicUrl(filePath);
-
+  const { data } = supabase.storage.from('pet-images').getPublicUrl(filePath);
   return data.publicUrl;
 }

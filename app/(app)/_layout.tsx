@@ -18,7 +18,7 @@ const E = {
 export default function AppLayout() {
   const { logout } = useAuth();
   const user       = useAuthStore((s) => s.user);
-  const isVendedor = user?.role === 'vendedor';
+  const isVendedor = (user?.role as any) === 'vendedor';
 
   return (
     <Stack
